@@ -1,0 +1,1202 @@
+// Zeronix Intelligence — Supplier & Broadcast Intelligence MVP
+//
+// STATUS: PROPOSAL for review (Stage A). Not yet migrated.
+// Human-readable rationale: docs/architecture/DATA_MODEL.md
+//
+// Rules encoded here:
+//  - Price and stock are OBSERVATIONS (Product + Supplier + value + observedAt + evidence). There is no Product.price / Product.stock.
+//  - EvidenceSource is immutable raw evidence. Observations always point at one.
+//  - Unknown is valid: optional columns stay NULL; VatState/StockStatus have an explicit UNKNOWN value.
+//  - Business rows are never hard-deleted: RecordStatus / archivedAt / retraction. FKs on business tables are Restrict.
+//  - CHECK constraints and append-only / immutability triggers are added by hand in the first migration
+//    (Prisma cannot express them). See DATA_MODEL.md. Use `prisma migrate`, never `prisma db push`.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────── Enums ───────────────────────────────
+
+/// ACTIVE = in use. INACTIVE = kept and visible but not currently used. ARCHIVED = soft-deleted, hidden by default.
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum SupplierType {
+  AUTHORIZED_DISTRIBUTOR
+  DISTRIBUTOR
+  STOCKIST
+  RESELLER
+  TRADER
+  IMPORTER
+  MARKETPLACE_SELLER
+  SERVICE_PROVIDER
+  PROJECT_PARTNER
+}
+
+enum PreferredChannel {
+  PHONE
+  WHATSAPP
+  EMAIL
+}
+
+enum EvidenceKind {
+  SUPPLIER_BROADCAST
+  /// A supplier's price or stock confirmed directly (a call, a message) and typed in by a person, with a note as the record.
+  SUPPLIER_CONFIRMATION
+  CUSTOMER_ENQUIRY
+  CUSTOMER_EMAIL
+}
+
+/// How the evidence entered the system / the medium it came through. Values are added when a channel is implemented.
+enum EvidenceChannel {
+  MANUAL_PASTE
+  WHATSAPP
+  EMAIL
+  PHONE
+  OTHER
+}
+
+enum AliasSource {
+  MANUAL
+  REVIEW
+}
+
+enum ItemOrigin {
+  PARSER
+  MANUAL
+}
+
+enum ExtractionConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ItemReviewStatus {
+  PENDING
+  CONFIRMED
+  IGNORED
+}
+
+/// Why an item is linked to its product. Confidence is derived: PART_NUMBER = exact, MODEL/ALIAS = probable, MANUAL/NEW_PRODUCT = user decision.
+enum MatchBasis {
+  PART_NUMBER
+  MODEL
+  ALIAS
+  MANUAL
+  NEW_PRODUCT
+}
+
+enum VatState {
+  INCLUDED
+  EXCLUDED
+  UNKNOWN
+}
+
+enum StockStatus {
+  IN_STOCK
+  LIMITED
+  AVAILABLE
+  INCOMING
+  ON_REQUEST
+  OUT_OF_STOCK
+  UNKNOWN
+}
+
+// ─────────────────────────────── Identity ───────────────────────────────
+
+/// Fixed roles (docs/decisions/0006-sign-in-and-roles.md). ADMIN also manages users, mailbox connections and brand / category settings.
+enum UserRole {
+  ADMIN
+  STAFF
+}
+
+model User {
+  id        String       @id @default(uuid(7)) @db.Uuid
+  email     String       @unique
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  /// scrypt$N$r$p$salt$hash. NULL = this person cannot sign in (yet). Never selected except by the sign-in and password services.
+  passwordHash     String?   @map("password_hash")
+  role             UserRole  @default(STAFF)
+  lastLoginAt      DateTime? @map("last_login_at") @db.Timestamptz(3)
+  /// Plain text added under emails this person sends. Each person has their own.
+  emailSignature   String?   @map("email_signature")
+  /// Consecutive wrong passwords. 5 in a row lock the account until `lockedUntil`.
+  failedLoginCount Int       @default(0) @map("failed_login_count")
+  lockedUntil      DateTime? @map("locked_until") @db.Timestamptz(3)
+  sessions         Session[]
+
+  // Back-relations required by Prisma (one per FK that points at User).
+  aliasesCreated             ProductAlias[]        @relation("AliasCreatedBy")
+  evidenceCreated            EvidenceSource[]      @relation("EvidenceCreatedBy")
+  broadcastsCreated          Broadcast[]           @relation("BroadcastCreatedBy")
+  itemsConfirmed             BroadcastItem[]       @relation("ItemConfirmedBy")
+  priceObservationsCreated   PriceObservation[]    @relation("PriceCreatedBy")
+  priceObservationsRetracted PriceObservation[]    @relation("PriceRetractedBy")
+  stockObservationsCreated   StockObservation[]    @relation("StockCreatedBy")
+  stockObservationsRetracted StockObservation[]    @relation("StockRetractedBy")
+  auditLogs                  AuditLog[]
+  enquiriesCreated           Enquiry[]             @relation("EnquiryCreatedBy")
+  enquiriesAssigned          Enquiry[]             @relation("EnquiryAssignedTo")
+  enquiryItemsConfirmed      EnquiryItem[]         @relation("EnquiryItemConfirmedBy")
+  emailAccountsCreated       EmailAccount[]        @relation("EmailAccountCreatedBy")
+  emailMessagesDismissed     EmailMessage[]        @relation("EmailDismissedBy")
+  supplierRequestsCreated    SupplierRequest[]     @relation("SupplierRequestCreatedBy")
+  supplierRequestsSent       SupplierRequest[]     @relation("SupplierRequestSentBy")
+  decisionsMade              ProcurementDecision[] @relation("DecisionDecidedBy")
+  decisionsRetracted         ProcurementDecision[] @relation("DecisionRetractedBy")
+  quotationsCreated          Quotation[]           @relation("QuotationCreatedBy")
+  quotationsIssued           Quotation[]           @relation("QuotationIssuedBy")
+  smtpAccountsCreated        SmtpAccount[]         @relation("SmtpAccountCreatedBy")
+  sentEmails                 SentEmail[]           @relation("SentEmailSentBy")
+  aiProviderSettingsCreated  AiProviderSetting[]   @relation("AiProviderSettingCreatedBy")
+  aiExecutions               AiExecution[]         @relation("AiExecutionActor")
+
+  @@map("users")
+}
+
+// ─────────────────────────────── Master data ───────────────────────────────
+
+model Brand {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  name           String
+  /// lower-cased, trimmed, whitespace-collapsed. Enforces case-insensitive uniqueness.
+  normalizedName String       @unique @map("normalized_name")
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  suppliers SupplierBrand[]
+  contacts  SupplierContactBrand[]
+  products  Product[]
+
+  @@map("brands")
+}
+
+/// Flat list for now. A parent_id can be added later without disturbing existing rows.
+model Category {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  name           String
+  normalizedName String       @unique @map("normalized_name")
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  suppliers SupplierCategory[]
+  contacts  SupplierContactCategory[]
+  products  Product[]
+
+  @@map("categories")
+}
+
+// ─────────────────────────────── Suppliers ───────────────────────────────
+
+model Supplier {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  name           String
+  /// Unique across ALL statuses so an archived supplier cannot be silently re-created as a duplicate.
+  normalizedName String        @unique @map("normalized_name")
+  legalName      String?       @map("legal_name")
+  code           String?       @unique
+  /// NULL = unknown.
+  type           SupplierType?
+  country        String?
+  emirate        String?
+  area           String?
+  address        String?
+  website        String?
+  phone          String?
+  whatsapp       String?
+  email          String?
+  /// UAE tax registration number.
+  trn            String?
+
+  // Procurement profile. Free text for now; numeric credit limit/period and term history are deferred (BACKLOG).
+  paymentTerms  String? @map("payment_terms")
+  creditTerms   String? @map("credit_terms")
+  warrantyNotes String? @map("warranty_notes")
+  deliveryNotes String? @map("delivery_notes")
+  notes         String?
+
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  contacts             SupplierContact[]
+  brands               SupplierBrand[]
+  categories           SupplierCategory[]
+  broadcasts           Broadcast[]
+  priceObservations    PriceObservation[]
+  stockObservations    StockObservation[]
+  supplierRequests     SupplierRequest[]
+  procurementDecisions ProcurementDecision[]
+
+  @@index([status])
+  @@map("suppliers")
+}
+
+model SupplierContact {
+  id               String            @id @default(uuid(7)) @db.Uuid
+  supplierId       String            @map("supplier_id") @db.Uuid
+  name             String
+  jobTitle         String?           @map("job_title")
+  department       String?
+  phone            String?
+  whatsapp         String?
+  email            String?
+  preferredChannel PreferredChannel? @map("preferred_channel")
+  notes            String?
+  status           RecordStatus      @default(ACTIVE)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  supplier          Supplier                  @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  brands            SupplierContactBrand[]
+  categories        SupplierContactCategory[]
+  broadcasts        Broadcast[]
+  priceObservations PriceObservation[]
+  stockObservations StockObservation[]
+  supplierRequests  SupplierRequest[]
+
+  @@index([supplierId, status])
+  @@map("supplier_contacts")
+}
+
+// Association tables. Rows here are metadata, not evidence, so they cascade with their parents (parents are never hard-deleted anyway).
+
+model SupplierBrand {
+  supplierId String   @map("supplier_id") @db.Uuid
+  brandId    String   @map("brand_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  brand    Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@id([supplierId, brandId])
+  @@index([brandId])
+  @@map("supplier_brands")
+}
+
+model SupplierCategory {
+  supplierId String   @map("supplier_id") @db.Uuid
+  categoryId String   @map("category_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([supplierId, categoryId])
+  @@index([categoryId])
+  @@map("supplier_categories")
+}
+
+model SupplierContactBrand {
+  contactId String   @map("contact_id") @db.Uuid
+  brandId   String   @map("brand_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  contact SupplierContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  brand   Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, brandId])
+  @@index([brandId])
+  @@map("supplier_contact_brands")
+}
+
+model SupplierContactCategory {
+  contactId  String   @map("contact_id") @db.Uuid
+  categoryId String   @map("category_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  contact  SupplierContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  category Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, categoryId])
+  @@index([categoryId])
+  @@map("supplier_contact_categories")
+}
+
+// ─────────────────────────────── Products ───────────────────────────────
+
+model Product {
+  id              String  @id @default(uuid(7)) @db.Uuid
+  /// Canonical display name, e.g. "Lenovo V15 G4 IRU".
+  name            String
+  brandId         String? @map("brand_id") @db.Uuid
+  categoryId      String? @map("category_id") @db.Uuid
+  family          String?
+  model           String?
+  partNumber      String? @map("part_number")
+  manufacturerSku String? @map("manufacturer_sku")
+  description     String?
+
+  /// Upper-cased, non-alphanumerics stripped ("83A100-SUAK" -> "83A100SUAK"). Used for matching and search.
+  normalizedModel      String? @map("normalized_model")
+  /// GLOBALLY unique when present (NULLs allowed, Postgres treats them as distinct). A collision surfaces as a "duplicate product" error.
+  normalizedPartNumber String? @unique @map("normalized_part_number")
+
+  /// Created from a broadcast, not yet curated. Never blocks procurement entry.
+  isTemporary Boolean      @default(false) @map("is_temporary")
+  status      RecordStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  brand    Brand?    @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  aliases           ProductAlias[]
+  broadcastItems    BroadcastItem[]
+  enquiryItems      EnquiryItem[]
+  priceObservations PriceObservation[]
+  stockObservations StockObservation[]
+
+  @@index([brandId])
+  @@index([categoryId])
+  @@index([normalizedModel])
+  @@index([status, isTemporary])
+  @@map("products")
+}
+
+/// Alternative names suppliers/customers use for a product.
+/// An alias MAY point to several products (e.g. "V15" -> V15 G3 and V15 G4): that yields a "possible match" for a human, never a silent pick.
+model ProductAlias {
+  id                    String      @id @default(uuid(7)) @db.Uuid
+  productId             String      @map("product_id") @db.Uuid
+  alias                 String
+  normalizedAlias       String      @map("normalized_alias")
+  source                AliasSource @default(MANUAL)
+  /// Provenance when learned during broadcast review.
+  sourceBroadcastItemId String?     @map("source_broadcast_item_id") @db.Uuid
+  createdById           String      @map("created_by_id") @db.Uuid
+  createdAt             DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Aliases are lightweight naming metadata, so they cascade with the product. Removing one is audited (before-value in details).
+  product    Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sourceItem BroadcastItem? @relation("AliasSourceItem", fields: [sourceBroadcastItemId], references: [id], onDelete: Restrict)
+  createdBy  User           @relation("AliasCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([productId, normalizedAlias])
+  @@index([normalizedAlias])
+  @@map("product_aliases")
+}
+
+// ─────────────────────────────── Evidence ───────────────────────────────
+
+/// Immutable raw evidence. A DB trigger rejects UPDATE and DELETE.
+/// Generic on purpose: later evidence kinds (email, quotation, spreadsheet) reuse this table as the anchor for observations.
+model EvidenceSource {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  kind        EvidenceKind
+  channel     EvidenceChannel @default(MANUAL_PASTE)
+  /// The original text, exactly as pasted.
+  rawText     String          @map("raw_text")
+  /// sha256 of whitespace-normalised rawText. Used only to warn about duplicate pastes, never to block.
+  contentHash String          @map("content_hash")
+  /// When the supplier sent/stated it (user-entered, defaults to now). Freshness is measured from this, NOT from created_at.
+  observedAt  DateTime        @map("observed_at") @db.Timestamptz(3)
+  createdById String          @map("created_by_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  createdBy         User               @relation("EvidenceCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  broadcast         Broadcast?
+  enquiry           Enquiry?
+  emailMessage      EmailMessage?
+  priceObservations PriceObservation[]
+  stockObservations StockObservation[]
+
+  @@index([contentHash])
+  @@index([observedAt])
+  @@map("evidence_sources")
+}
+
+// ─────────────────────────────── Broadcasts ───────────────────────────────
+
+/// Workflow wrapper around one EvidenceSource. Review progress is DERIVED from item statuses (no redundant stored status).
+model Broadcast {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  evidenceSourceId  String    @unique @map("evidence_source_id") @db.Uuid
+  supplierId        String    @map("supplier_id") @db.Uuid
+  contactId         String?   @map("contact_id") @db.Uuid
+  /// Set when this broadcast is a supplier's reply to a sourcing request. A trigger checks the supplier matches.
+  supplierRequestId String?   @map("supplier_request_id") @db.Uuid
+  notes             String?
+  /// Soft-delete. Broadcasts are never hard-deleted.
+  archivedAt        DateTime? @map("archived_at") @db.Timestamptz(3)
+  createdById       String    @map("created_by_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  evidenceSource  EvidenceSource   @relation(fields: [evidenceSourceId], references: [id], onDelete: Restrict)
+  supplier        Supplier         @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  contact         SupplierContact? @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  supplierRequest SupplierRequest? @relation(fields: [supplierRequestId], references: [id], onDelete: Restrict)
+  createdBy       User             @relation("BroadcastCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  items           BroadcastItem[]
+
+  @@index([supplierId, createdAt(sort: Desc)])
+  @@index([supplierRequestId])
+  @@index([archivedAt])
+  @@map("broadcasts")
+}
+
+/// One product line extracted from (or manually added to) a broadcast.
+/// `extractedData` = the parser's original proposal, write-once (trigger). The typed columns are the CURRENT (possibly corrected) values.
+/// A correction = difference between the two; each edit also writes an AuditLog row with before/after.
+model BroadcastItem {
+  id          String @id @default(uuid(7)) @db.Uuid
+  broadcastId String @map("broadcast_id") @db.Uuid
+  position    Int
+
+  /// Snippet of the raw text this item was derived from (kept so review works even if line numbers are absent).
+  sourceText      String @map("source_text")
+  sourceLineStart Int?   @map("source_line_start")
+  sourceLineEnd   Int?   @map("source_line_end")
+
+  origin               ItemOrigin
+  extractionConfidence ExtractionConfidence? @map("extraction_confidence")
+  extractedData        Json?                 @map("extracted_data")
+
+  // Current / corrected values. NULL = unknown.
+  description  String?
+  brandText    String?     @map("brand_text")
+  modelText    String?     @map("model_text")
+  partNumber   String?     @map("part_number")
+  specText     String?     @map("spec_text")
+  quantity     Int?
+  priceAmount  Decimal?    @map("price_amount") @db.Decimal(14, 2)
+  /// ISO-4217. Never assumed by the parser; the reviewer confirms it (form pre-selects AED visibly).
+  currencyCode String?     @map("currency_code") @db.Char(3)
+  vatState     VatState    @default(UNKNOWN) @map("vat_state")
+  stockStatus  StockStatus @default(UNKNOWN) @map("stock_status")
+  notes        String?
+
+  // Product link + review state.
+  productId     String?          @map("product_id") @db.Uuid
+  matchBasis    MatchBasis?      @map("match_basis")
+  reviewStatus  ItemReviewStatus @default(PENDING) @map("review_status")
+  confirmedAt   DateTime?        @map("confirmed_at") @db.Timestamptz(3)
+  confirmedById String?          @map("confirmed_by_id") @db.Uuid
+  ignoredReason String?          @map("ignored_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  broadcast   Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Restrict)
+  product     Product?  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  confirmedBy User?     @relation("ItemConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+
+  aliasesLearned    ProductAlias[]     @relation("AliasSourceItem")
+  priceObservations PriceObservation[]
+  stockObservations StockObservation[]
+
+  @@unique([broadcastId, position])
+  @@index([broadcastId, reviewStatus])
+  @@index([productId])
+  @@map("broadcast_items")
+}
+
+// ─────────────────────────────── Observations ───────────────────────────────
+// Append-only facts. A trigger permits exactly one kind of UPDATE: one-way retraction (retracted_* columns).
+// "Latest" = per (product, supplier): ORDER BY observed_at DESC, created_at DESC, excluding retracted rows.
+
+model PriceObservation {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  productId    String   @map("product_id") @db.Uuid
+  supplierId   String   @map("supplier_id") @db.Uuid
+  contactId    String?  @map("contact_id") @db.Uuid
+  amount       Decimal  @db.Decimal(14, 2)
+  currencyCode String   @map("currency_code") @db.Char(3)
+  vatState     VatState @default(UNKNOWN) @map("vat_state")
+  /// Copied from the evidence at creation (immutable there), denormalised for indexed "latest" queries.
+  observedAt   DateTime @map("observed_at") @db.Timestamptz(3)
+
+  evidenceSourceId String  @map("evidence_source_id") @db.Uuid
+  broadcastItemId  String? @map("broadcast_item_id") @db.Uuid
+
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  retractedAt      DateTime? @map("retracted_at") @db.Timestamptz(3)
+  retractedById    String?   @map("retracted_by_id") @db.Uuid
+  retractionReason String?   @map("retraction_reason")
+
+  product        Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  supplier       Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  contact        SupplierContact?      @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  evidenceSource EvidenceSource        @relation(fields: [evidenceSourceId], references: [id], onDelete: Restrict)
+  broadcastItem  BroadcastItem?        @relation(fields: [broadcastItemId], references: [id], onDelete: Restrict)
+  createdBy      User                  @relation("PriceCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  retractedBy    User?                 @relation("PriceRetractedBy", fields: [retractedById], references: [id], onDelete: Restrict)
+  decisions      ProcurementDecision[]
+  quotationLines QuotationLine[]
+
+  @@index([productId, supplierId, observedAt(sort: Desc)])
+  @@index([supplierId, observedAt(sort: Desc)])
+  @@index([evidenceSourceId])
+  @@index([observedAt(sort: Desc)])
+  @@index([broadcastItemId])
+  @@map("price_observations")
+}
+
+model StockObservation {
+  id         String      @id @default(uuid(7)) @db.Uuid
+  productId  String      @map("product_id") @db.Uuid
+  supplierId String      @map("supplier_id") @db.Uuid
+  contactId  String?     @map("contact_id") @db.Uuid
+  /// NULL = quantity unknown.
+  quantity   Int?
+  status     StockStatus @default(UNKNOWN)
+  observedAt DateTime    @map("observed_at") @db.Timestamptz(3)
+
+  evidenceSourceId String  @map("evidence_source_id") @db.Uuid
+  broadcastItemId  String? @map("broadcast_item_id") @db.Uuid
+
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  retractedAt      DateTime? @map("retracted_at") @db.Timestamptz(3)
+  retractedById    String?   @map("retracted_by_id") @db.Uuid
+  retractionReason String?   @map("retraction_reason")
+
+  product        Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  supplier       Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  contact        SupplierContact?      @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  evidenceSource EvidenceSource        @relation(fields: [evidenceSourceId], references: [id], onDelete: Restrict)
+  broadcastItem  BroadcastItem?        @relation(fields: [broadcastItemId], references: [id], onDelete: Restrict)
+  createdBy      User                  @relation("StockCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  retractedBy    User?                 @relation("StockRetractedBy", fields: [retractedById], references: [id], onDelete: Restrict)
+  decisions      ProcurementDecision[]
+
+  @@index([productId, supplierId, observedAt(sort: Desc)])
+  @@index([supplierId, observedAt(sort: Desc)])
+  @@index([evidenceSourceId])
+  @@index([observedAt(sort: Desc)])
+  @@index([broadcastItemId])
+  @@map("stock_observations")
+}
+
+// ─────────────────────────────── Audit ───────────────────────────────
+
+/// Append-only (trigger). NULL actor = system (seed, migrations).
+/// scope_* names the aggregate that "owns" the change so an entity's Activity tab can include its children
+/// (e.g. a contact edit has scope = Supplier X; an item confirmation has scope = Broadcast Y). NULL = the entity is its own scope.
+model AuditLog {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  /// Namespaced, e.g. "supplier.created", "broadcast_item.confirmed", "observation.retracted".
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  scopeType  String?  @map("scope_type")
+  scopeId    String?  @map("scope_id")
+  /// Changed fields as { field: { from, to } }, reasons, and other context.
+  details    Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([scopeType, scopeId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([actorId])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────── Enquiry Intelligence (customers, enquiries, email) ───────────────────────────────
+// Milestone: docs/plans/active/CURRENT.md. Additive only. Extra CHECKs and triggers live in the migration (Prisma cannot express them).
+
+enum EnquiryStatus {
+  NEW
+  ASSIGNED
+  SOURCING
+  WAITING_SUPPLIER
+  QUOTATION_READY
+  QUOTED
+  NEGOTIATION
+  FOLLOW_UP
+  WON
+  LOST
+  ON_HOLD
+}
+
+enum EnquiryPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum EmailSecurity {
+  SSL_TLS
+  STARTTLS
+}
+
+/// Deterministic enquiry-likelihood band, derived from the score at ingest (thresholds in modules/email/scoring/config.ts).
+enum EmailBand {
+  LIKELY
+  REVIEW
+  LOW
+}
+
+enum EmailTriageStatus {
+  NEW
+  ENQUIRY_CREATED
+  DISMISSED
+}
+
+enum EmailSyncStatus {
+  OK
+  ERROR
+}
+
+model Customer {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  name           String
+  /// Unique across ALL statuses so an archived customer cannot be silently re-created as a duplicate.
+  normalizedName String       @unique @map("normalized_name")
+  legalName      String?      @map("legal_name")
+  trn            String?
+  country        String?
+  emirate        String?
+  website        String?
+  phone          String?
+  email          String?
+  notes          String?
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  contacts   CustomerContact[]
+  enquiries  Enquiry[]
+  quotations Quotation[]
+  sentEmails SentEmail[]
+
+  @@index([status])
+  @@map("customers")
+}
+
+model CustomerContact {
+  id               String            @id @default(uuid(7)) @db.Uuid
+  customerId       String            @map("customer_id") @db.Uuid
+  name             String
+  jobTitle         String?           @map("job_title")
+  department       String?
+  phone            String?
+  whatsapp         String?
+  email            String?
+  /// lower-cased email, maintained by the service, used to match an email sender to a known customer.
+  normalizedEmail  String?           @map("normalized_email")
+  preferredChannel PreferredChannel? @map("preferred_channel")
+  notes            String?
+  status           RecordStatus      @default(ACTIVE)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer  Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  enquiries Enquiry[]
+
+  @@index([customerId, status])
+  @@index([normalizedEmail])
+  @@map("customer_contacts")
+}
+
+/// A customer request. Mirrors Broadcast: the raw request is an immutable EvidenceSource, items are proposals a person confirms.
+model Enquiry {
+  id               String          @id @default(uuid(7)) @db.Uuid
+  /// Human reference, shown as ENQ-00012.
+  number           Int             @unique @default(autoincrement())
+  evidenceSourceId String          @unique @map("evidence_source_id") @db.Uuid
+  customerId       String?         @map("customer_id") @db.Uuid
+  contactId        String?         @map("contact_id") @db.Uuid
+  /// Kept when the sender is not a known customer (unknown stays unknown; no customer is invented).
+  requesterName    String?         @map("requester_name")
+  requesterEmail   String?         @map("requester_email")
+  subject          String?
+  status           EnquiryStatus   @default(NEW)
+  priority         EnquiryPriority @default(NORMAL)
+  requiredBy       DateTime?       @map("required_by") @db.Date
+  deliveryLocation String?         @map("delivery_location")
+  blocker          String?
+  nextAction       String?         @map("next_action")
+  assignedToId     String?         @map("assigned_to_id") @db.Uuid
+  notes            String?
+  /// The parser's original header proposals { parser, version, header }, write-once (trigger).
+  extractedData    Json?           @map("extracted_data")
+  archivedAt       DateTime?       @map("archived_at") @db.Timestamptz(3)
+  lastActivityAt   DateTime        @default(now()) @map("last_activity_at") @db.Timestamptz(3)
+  createdById      String          @map("created_by_id") @db.Uuid
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  evidenceSource   EvidenceSource    @relation(fields: [evidenceSourceId], references: [id], onDelete: Restrict)
+  customer         Customer?         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  contact          CustomerContact?  @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  assignedTo       User?             @relation("EnquiryAssignedTo", fields: [assignedToId], references: [id], onDelete: Restrict)
+  createdBy        User              @relation("EnquiryCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  items            EnquiryItem[]
+  email            EmailMessage?
+  supplierRequests SupplierRequest[]
+  quotations       Quotation[]
+
+  @@index([status, lastActivityAt(sort: Desc)])
+  @@index([customerId])
+  @@index([archivedAt])
+  @@map("enquiries")
+}
+
+/// One requirement line of an enquiry. Mirrors BroadcastItem (parser proposal write-once, typed columns are the current values).
+model EnquiryItem {
+  id                   String                @id @default(uuid(7)) @db.Uuid
+  enquiryId            String                @map("enquiry_id") @db.Uuid
+  position             Int
+  sourceText           String                @map("source_text")
+  sourceLineStart      Int?                  @map("source_line_start")
+  sourceLineEnd        Int?                  @map("source_line_end")
+  origin               ItemOrigin
+  extractionConfidence ExtractionConfidence? @map("extraction_confidence")
+  /// Parser output { parser, version, reasons, hints, fields }, write-once (trigger).
+  extractedData        Json?                 @map("extracted_data")
+
+  // Current / corrected values. NULL = unknown.
+  description String?
+  brandText   String? @map("brand_text")
+  familyText  String? @map("family_text")
+  modelText   String? @map("model_text")
+  partNumber  String? @map("part_number")
+  specText    String? @map("spec_text")
+  quantity    Int?
+  notes       String?
+
+  productId     String?          @map("product_id") @db.Uuid
+  matchBasis    MatchBasis?      @map("match_basis")
+  reviewStatus  ItemReviewStatus @default(PENDING) @map("review_status")
+  confirmedAt   DateTime?        @map("confirmed_at") @db.Timestamptz(3)
+  confirmedById String?          @map("confirmed_by_id") @db.Uuid
+  ignoredReason String?          @map("ignored_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  enquiry              Enquiry               @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
+  product              Product?              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  confirmedBy          User?                 @relation("EnquiryItemConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  procurementDecisions ProcurementDecision[]
+  quotationLines       QuotationLine[]
+
+  @@unique([enquiryId, position])
+  @@index([enquiryId, reviewStatus])
+  @@index([productId])
+  @@map("enquiry_items")
+}
+
+/// An IMAP mailbox. SECURITY: `passwordEncrypted` is never selected except by the sync and test-connection services (ADR 0005).
+model EmailAccount {
+  id                String           @id @default(uuid(7)) @db.Uuid
+  label             String
+  host              String
+  port              Int
+  security          EmailSecurity    @default(SSL_TLS)
+  username          String
+  /// AES-256-GCM "v1:iv:tag:ciphertext". Write-only.
+  passwordEncrypted String           @map("password_encrypted")
+  folder            String           @default("INBOX")
+  /// lower(host)|lower(username)|folder. Enforces uniqueness case-insensitively.
+  normalizedKey     String           @unique @map("normalized_key")
+  syncFromDate      DateTime         @map("sync_from_date") @db.Timestamptz(3)
+  status            RecordStatus     @default(ACTIVE)
+  uidValidity       BigInt?          @map("uid_validity")
+  lastUid           BigInt?          @map("last_uid")
+  lastSyncAt        DateTime?        @map("last_sync_at") @db.Timestamptz(3)
+  lastSyncStatus    EmailSyncStatus? @map("last_sync_status")
+  lastSyncError     String?          @map("last_sync_error")
+  /// Compare-and-set lease so two syncs of one account cannot overlap.
+  syncLeaseUntil    DateTime?        @map("sync_lease_until") @db.Timestamptz(3)
+  createdById       String           @map("created_by_id") @db.Uuid
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy User           @relation("EmailAccountCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  messages  EmailMessage[]
+
+  @@map("email_accounts")
+}
+
+/// An ingested email. Immutable evidence except the triage columns (trigger). Its clean text is also an EvidenceSource.
+model EmailMessage {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  accountId        String    @map("account_id") @db.Uuid
+  folder           String
+  uid              BigInt
+  uidValidity      BigInt    @map("uid_validity")
+  messageId        String?   @map("message_id")
+  inReplyTo        String?   @map("in_reply_to")
+  referencesHeader String?   @map("references_header")
+  fromName         String?   @map("from_name")
+  /// lower-cased
+  fromAddress      String?   @map("from_address")
+  toAddresses      Json      @map("to_addresses")
+  ccAddresses      Json      @map("cc_addresses")
+  subject          String?
+  sentAt           DateTime? @map("sent_at") @db.Timestamptz(3)
+  receivedAt       DateTime  @map("received_at") @db.Timestamptz(3)
+  /// Plain part, or HTML converted to text. The full MIME is in rawSource.
+  textBody         String    @map("text_body")
+  /// [{ filename, contentType, size }] metadata only.
+  attachments      Json
+  /// NULL when the message exceeded the size cap (rawSize still records the size).
+  rawSource        Bytes?    @map("raw_source")
+  rawSize          Int       @map("raw_size")
+  parseError       String?   @map("parse_error")
+  score            Int
+  scoreReasons     Json      @map("score_reasons")
+  band             EmailBand
+
+  triageStatus    EmailTriageStatus @default(NEW) @map("triage_status")
+  dismissedAt     DateTime?         @map("dismissed_at") @db.Timestamptz(3)
+  dismissedById   String?           @map("dismissed_by_id") @db.Uuid
+  dismissedReason String?           @map("dismissed_reason")
+  enquiryId       String?           @unique @map("enquiry_id") @db.Uuid
+
+  evidenceSourceId String   @unique @map("evidence_source_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  account        EmailAccount   @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  evidenceSource EvidenceSource @relation(fields: [evidenceSourceId], references: [id], onDelete: Restrict)
+  enquiry        Enquiry?       @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
+  dismissedBy    User?          @relation("EmailDismissedBy", fields: [dismissedById], references: [id], onDelete: Restrict)
+
+  @@unique([accountId, folder, uidValidity, uid])
+  @@index([band, triageStatus, receivedAt(sort: Desc)])
+  @@index([fromAddress])
+  @@map("email_messages")
+}
+
+// ─────────────────────────────── Sourcing requests ───────────────────────────────
+// Milestone: docs/plans/active/CURRENT.md. Additive only. The CHECKs and triggers live in the migration (Prisma cannot express them).
+
+enum SupplierRequestStatus {
+  DRAFT
+  SENT
+  REPLIED
+  NO_STOCK
+  DECLINED
+}
+
+/// "We asked this supplier about this enquiry." One row per (enquiry, supplier). The text sent, its time and channel are write-once (trigger).
+/// A supplier's reply is a Broadcast whose supplier_request_id points here.
+model SupplierRequest {
+  id          String                @id @default(uuid(7)) @db.Uuid
+  enquiryId   String                @map("enquiry_id") @db.Uuid
+  supplierId  String                @map("supplier_id") @db.Uuid
+  contactId   String?               @map("contact_id") @db.Uuid
+  status      SupplierRequestStatus @default(DRAFT)
+  /// How it was sent. NULL until sent.
+  channel     PreferredChannel?
+  /// The exact text sent (subject line, blank line, body). NULL until sent.
+  messageText String?               @map("message_text")
+  sentAt      DateTime?             @map("sent_at") @db.Timestamptz(3)
+  sentById    String?               @map("sent_by_id") @db.Uuid
+  note        String?
+  createdById String                @map("created_by_id") @db.Uuid
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  enquiry   Enquiry          @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
+  supplier  Supplier         @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  contact   SupplierContact? @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  sentBy    User?            @relation("SupplierRequestSentBy", fields: [sentById], references: [id], onDelete: Restrict)
+  createdBy User             @relation("SupplierRequestCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  replies   Broadcast[]
+
+  @@unique([enquiryId, supplierId])
+  @@index([supplierId])
+  @@map("supplier_requests")
+}
+
+// ─────────────────────────────── Procurement decisions ───────────────────────────────
+// Milestone: docs/plans/active/CURRENT.md. Additive only. The unique index and trigger live in the migration (Prisma cannot express them).
+
+/// "We chose this supplier for this requirement." The price and stock the buyer saw are frozen by pointing at the (immutable) observations.
+/// Never edited or deleted: only a one-way retraction (trigger). At most one ACTIVE decision per requirement (partial unique index).
+model ProcurementDecision {
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  enquiryItemId      String   @map("enquiry_item_id") @db.Uuid
+  supplierId         String   @map("supplier_id") @db.Uuid
+  /// What the buyer saw. NULL = none on record (unknown stays unknown).
+  priceObservationId String?  @map("price_observation_id") @db.Uuid
+  stockObservationId String?  @map("stock_observation_id") @db.Uuid
+  note               String?
+  decidedById        String   @map("decided_by_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  retractedAt      DateTime? @map("retracted_at") @db.Timestamptz(3)
+  retractedById    String?   @map("retracted_by_id") @db.Uuid
+  retractionReason String?   @map("retraction_reason")
+
+  enquiryItem      EnquiryItem       @relation(fields: [enquiryItemId], references: [id], onDelete: Restrict)
+  supplier         Supplier          @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  priceObservation PriceObservation? @relation(fields: [priceObservationId], references: [id], onDelete: Restrict)
+  stockObservation StockObservation? @relation(fields: [stockObservationId], references: [id], onDelete: Restrict)
+  decidedBy        User              @relation("DecisionDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict)
+  retractedBy      User?             @relation("DecisionRetractedBy", fields: [retractedById], references: [id], onDelete: Restrict)
+
+  @@index([enquiryItemId])
+  @@index([supplierId])
+  @@map("procurement_decisions")
+}
+
+// ─────────────────────────────── Quotations ───────────────────────────────
+// Milestone: docs/plans/active/CURRENT.md. Additive only. The CHECKs, the one-draft index and the triggers live in the migration (Prisma cannot express them).
+
+enum QuotationStatus {
+  DRAFT
+  ISSUED
+  SUPERSEDED
+}
+
+/// A price offered to a customer. Editable while DRAFT; once ISSUED the database refuses any change to it or its lines (only ISSUED -> SUPERSEDED).
+/// A revision is a new row with the same `number` and `revision + 1`. What the customer reads (customer, lines, prices) is copied here, not linked.
+model Quotation {
+  id            String          @id @default(uuid(7)) @db.Uuid
+  /// Internal identity, shared by all revisions of one quotation. The reference people see is built from quote_date and quote_seq.
+  number        Int             @default(autoincrement())
+  revision      Int             @default(1)
+  /// The reference is QUO-YYYYMMDD-0001: the day it was made (business timezone) and that day's counter. Revisions share both.
+  quoteDate     DateTime        @map("quote_date") @db.Date
+  quoteSeq      Int             @map("quote_seq")
+  /// NULL for a manual quotation (made without an enquiry).
+  enquiryId     String?         @map("enquiry_id") @db.Uuid
+  customerId    String?         @map("customer_id") @db.Uuid
+  /// Text snapshots of who the quotation is addressed to. NULL = unknown (issuing needs the customer name).
+  customerName  String?         @map("customer_name")
+  contactName   String?         @map("contact_name")
+  status        QuotationStatus @default(DRAFT)
+  currencyCode  String          @default("AED") @map("currency_code") @db.Char(3)
+  vatPercent    Decimal         @default(5) @map("vat_percent") @db.Decimal(5, 2)
+  validUntil    DateTime?       @map("valid_until") @db.Date
+  paymentTerms  String?         @map("payment_terms")
+  deliveryTerms String?         @map("delivery_terms")
+  /// Shown to the customer.
+  notes         String?
+  issuedAt      DateTime?       @map("issued_at") @db.Timestamptz(3)
+  issuedById    String?         @map("issued_by_id") @db.Uuid
+  supersededAt  DateTime?       @map("superseded_at") @db.Timestamptz(3)
+  createdById   String          @map("created_by_id") @db.Uuid
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  enquiry    Enquiry?        @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
+  customer   Customer?       @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  issuedBy   User?           @relation("QuotationIssuedBy", fields: [issuedById], references: [id], onDelete: Restrict)
+  createdBy  User            @relation("QuotationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  lines      QuotationLine[]
+  sentEmails SentEmail[]
+
+  @@unique([number, revision])
+  @@unique([quoteDate, quoteSeq, revision])
+  @@index([enquiryId])
+  @@index([status, updatedAt(sort: Desc)])
+  @@map("quotations")
+}
+
+/// One priced line. `costPriceObservationId` is INTERNAL: the supplier, cost and VAT state are read through that immutable observation,
+/// so cost cannot drift and is never typed. It is never part of the customer-facing print query.
+model QuotationLine {
+  id                     String   @id @default(uuid(7)) @db.Uuid
+  quotationId            String   @map("quotation_id") @db.Uuid
+  position               Int
+  /// Where the line came from. NULL for a line typed by hand (delivery, installation).
+  enquiryItemId          String?  @map("enquiry_item_id") @db.Uuid
+  description            String
+  partNumber             String?  @map("part_number")
+  /// NULL = not entered yet. Issuing needs a quantity above zero.
+  quantity               Int?
+  /// Per unit, excluding VAT, in the quotation's currency. NULL = not priced yet.
+  unitPrice              Decimal? @map("unit_price") @db.Decimal(14, 2)
+  /// Set only when the cost is known and in the quotation's currency; the service keeps it consistent with the price.
+  markupPercent          Decimal? @map("markup_percent") @db.Decimal(7, 2)
+  costPriceObservationId String?  @map("cost_price_observation_id") @db.Uuid
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  quotation       Quotation         @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  enquiryItem     EnquiryItem?      @relation(fields: [enquiryItemId], references: [id], onDelete: Restrict)
+  costObservation PriceObservation? @relation(fields: [costPriceObservationId], references: [id], onDelete: Restrict)
+
+  @@unique([quotationId, position])
+  @@index([enquiryItemId])
+  @@index([costPriceObservationId])
+  @@map("quotation_lines")
+}
+
+// ─────────────────────────────── Outgoing email ───────────────────────────────
+// Milestone: docs/plans/active/CURRENT.md. Additive only. The one-active index and the immutability trigger live in the migration.
+
+enum SentEmailStatus {
+  SENT
+  FAILED
+}
+
+/// An outgoing (SMTP) mailbox. SECURITY: `passwordEncrypted` is never selected except by the send and test services (ADR 0005). One is ACTIVE at a time.
+model SmtpAccount {
+  id                String           @id @default(uuid(7)) @db.Uuid
+  label             String
+  host              String
+  port              Int
+  security          EmailSecurity    @default(SSL_TLS)
+  username          String
+  /// AES-256-GCM "v1:iv:tag:ciphertext". Write-only.
+  passwordEncrypted String           @map("password_encrypted")
+  fromName          String           @map("from_name")
+  fromAddress       String           @map("from_address")
+  replyTo           String?          @map("reply_to")
+  /// Added as a blind copy by default in the compose drawer (a person can remove it).
+  defaultBcc        String?          @map("default_bcc")
+  status            RecordStatus     @default(ACTIVE)
+  lastTestAt        DateTime?        @map("last_test_at") @db.Timestamptz(3)
+  lastTestStatus    EmailSyncStatus? @map("last_test_status")
+  lastTestError     String?          @map("last_test_error")
+  createdById       String           @map("created_by_id") @db.Uuid
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy  User        @relation("SmtpAccountCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  sentEmails SentEmail[]
+
+  @@map("smtp_accounts")
+}
+
+/// An email the application sent (or tried to). Written once and never changed or deleted (trigger). The attachment is stored with it, so
+/// exactly what the customer received can always be opened again. A failed attempt is kept too, with a plain reason.
+model SentEmail {
+  id               String          @id @default(uuid(7)) @db.Uuid
+  smtpAccountId    String          @map("smtp_account_id") @db.Uuid
+  quotationId      String?         @map("quotation_id") @db.Uuid
+  customerId       String?         @map("customer_id") @db.Uuid
+  toAddresses      Json            @map("to_addresses")
+  ccAddresses      Json            @map("cc_addresses")
+  bccAddresses     Json            @map("bcc_addresses")
+  subject          String
+  bodyText         String          @map("body_text")
+  attachmentName   String?         @map("attachment_name")
+  attachmentSize   Int?            @map("attachment_size")
+  attachmentSha256 String?         @map("attachment_sha256")
+  attachmentBytes  Bytes?          @map("attachment_bytes")
+  /// The Message-ID the server gave it. NULL when it failed.
+  messageId        String?         @map("message_id")
+  status           SentEmailStatus
+  /// A plain, sanitised reason when it failed. Never a raw server response.
+  error            String?
+  sentById         String          @map("sent_by_id") @db.Uuid
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  smtpAccount SmtpAccount @relation(fields: [smtpAccountId], references: [id], onDelete: Restrict)
+  quotation   Quotation?  @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  customer    Customer?   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  sentBy      User        @relation("SentEmailSentBy", fields: [sentById], references: [id], onDelete: Restrict)
+
+  @@index([quotationId, createdAt(sort: Desc)])
+  @@index([customerId, createdAt(sort: Desc)])
+  @@index([smtpAccountId])
+  @@map("sent_emails")
+}
+
+// ─────────────────────────────── Sign-in sessions ───────────────────────────────
+// Milestone: docs/plans/active/CURRENT.md. The browser holds a random token; only its SHA-256 hash is stored here.
+
+model Session {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  tokenHash  String   @unique @map("token_hash")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
+  lastUsedAt DateTime @default(now()) @map("last_used_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ─────────────────────────────── AI intelligence layer ───────────────────────────────
+// ADR 0007, docs/ai-intelligence/. The AI answers from evidence; it never writes business records. Keys are AES-256-GCM encrypted
+// (secret-box, ADR 0005) and never selected except by the query that builds a provider.
+
+enum AiProvider {
+  ANTHROPIC
+  OPENAI
+  GEMINI
+}
+
+enum AiExecutionStatus {
+  SUCCEEDED
+  FAILED
+}
+
+/// One row per provider an admin has set up. Exactly one may be active (partial unique index); switching provider changes which row is
+/// active, nothing else. The key is write-only.
+model AiProviderSetting {
+  id              String     @id @default(uuid(7)) @db.Uuid
+  provider        AiProvider @unique
+  model           String
+  apiKeyEncrypted String     @map("api_key_encrypted")
+  isActive        Boolean    @default(false) @map("is_active")
+  createdById     String     @map("created_by_id") @db.Uuid
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy User @relation("AiProviderSettingCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@map("ai_provider_settings")
+}
+
+/// Append-only log of every assistant run, successful or not. Holds the question (at most 500 characters), counts and codes:
+/// never prices, keys or raw supplier text. `provider`/`model` are NULL when no provider was called (answered by rules alone, or failed first).
+model AiExecution {
+  id               String            @id @default(uuid(7)) @db.Uuid
+  actorId          String            @map("actor_id") @db.Uuid
+  intent           String
+  status           AiExecutionStatus
+  /// Short code from the orchestrator (NO_PROVIDER, AUTH, RATE_LIMITED, INVALID_OUTPUT...). Set exactly when status is FAILED.
+  errorCode        String?           @map("error_code")
+  provider         AiProvider?
+  /// The model that actually served the answer (a refusal fallback can differ from the configured one).
+  model            String?
+  promptVersion    String?           @map("prompt_version")
+  entityType       String?           @map("entity_type")
+  entityId         String?           @map("entity_id") @db.Uuid
+  inputSummary     String            @map("input_summary")
+  outputSummary    String?           @map("output_summary")
+  confidenceScore  Decimal?          @map("confidence_score") @db.Decimal(3, 2)
+  toolCalls        Int               @default(0) @map("tool_calls")
+  providerCalls    Int               @default(0) @map("provider_calls")
+  evidenceCount    Int               @default(0) @map("evidence_count")
+  repairAttempted  Boolean           @default(false) @map("repair_attempted")
+  /// All input tokens, cached or not (the same meaning for every provider).
+  inputTokens      Int?              @map("input_tokens")
+  outputTokens     Int?              @map("output_tokens")
+  /// The part of the input served from the provider's prompt cache, and the part written to it (only Claude reports writes).
+  cacheReadTokens  Int?              @map("cache_read_tokens")
+  cacheWriteTokens Int?              @map("cache_write_tokens")
+  latencyMs        Int               @map("latency_ms")
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor User @relation("AiExecutionActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@map("ai_executions")
+}

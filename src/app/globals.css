@@ -1,0 +1,151 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Light theme only for this milestone (docs/design/UI_SYSTEM.md). The variant stays defined so `dark:` classes inside shadcn components
+   are inert until a `.dark` class is ever applied; a dark theme is a backlog item, not a half-supported mode. */
+@custom-variant dark (&:is(.dark *));
+
+/* ── Static design tokens: type scale, semantic tones ─────────────────────────────────────────── */
+@theme {
+  /* Type scale (UI_SYSTEM section 3). Nothing above 24px anywhere. */
+  --text-xs: 0.75rem; /* 12px  table cells, metadata */
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem; /* 13px  body, controls */
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.9375rem; /* 15px  section headings */
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1.375rem; /* 22px  page title */
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.5rem; /* 24px  large headings */
+  --text-xl--line-height: 1.875rem;
+  --text-2xl: 1.875rem; /* 30px  KPI figures */
+  --text-2xl--line-height: 2.25rem;
+  --text-3xl: 2.125rem; /* 34px  page title on the canvas */
+  --text-3xl--line-height: 2.5rem;
+
+  /* Semantic tones: foreground / tinted background / border. Colour carries meaning only. */
+  --color-success: #1f8a4c;
+  --color-success-bg: #eaf7ee;
+  --color-success-border: #bfe6cb;
+  --color-warning: oklch(0.555 0.163 48.4);
+  --color-warning-bg: oklch(0.987 0.022 95.3);
+  --color-warning-border: oklch(0.924 0.12 95.7);
+  --color-danger: oklch(0.505 0.213 27.5);
+  --color-danger-bg: oklch(0.971 0.013 17.4);
+  --color-danger-border: oklch(0.885 0.062 18.3);
+  --color-info: #0e7490;
+  --color-info-bg: #ecfafd;
+  --color-info-border: #b6e6f0;
+
+  --shadow-float: 0 4px 16px oklch(0 0 0 / 0.08); /* popovers and drawers only */
+
+  /* Design v2 (docs/design/UI_SYSTEM.md). Layers: canvas (the app background) -> white raised panel -> quiet inner surface. */
+  --color-canvas: #ffffff; /* white: the layout background and the top navbar; cards separate themselves with their ring and shadow */
+  --shadow-panel: 0 1px 2px oklch(0.3 0.04 160 / 0.04), 0 2px 8px oklch(0.3 0.04 160 / 0.05);
+}
+
+/* ── shadcn mapping. Note: shadcn's `accent` = subtle hover surface. The brand accent is `primary`. ─────────── */
+@theme inline {
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-brand: var(--brand);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Radius scale (design v3): one knob, --radius (12px). Buttons, inputs, menus and tables are `rounded-lg`; cards and panels are `rounded-xl`
+     (16px); chips, tabs and avatars are `rounded-full`. Nothing in the app sets a pixel radius by hand. */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: var(--radius);
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-3xl: 24px;
+  --radius-4xl: 28px;
+}
+
+:root {
+  --radius: 0.75rem; /* 12px: buttons, inputs, menus, table wrappers */
+
+  --background: #ffffff;
+  --foreground: #10241a;
+  --card: #ffffff;
+  --card-foreground: #10241a;
+  --popover: #ffffff;
+  --popover-foreground: #10241a;
+
+  /* Design v3 (Business OS green). `primary` is the lime call-to-action (dark text on it); `brand` is the mid green for links, active icons,
+     selected chips and the focus ring, because lime text on white is unreadable. */
+  --primary: #b4e64e;
+  --primary-foreground: #0b3d2a;
+  --brand: #2a8a4a;
+
+  --secondary: #edf3ee;
+  --secondary-foreground: #10241a;
+  --muted: #edf3ee;
+  --muted-foreground: #66776d;
+  --accent: #edf3ee;
+  --accent-foreground: #10241a;
+  --destructive: oklch(0.577 0.245 27.3);
+
+  --border: #e3eae4;
+  --input: #dbe4dc;
+  --ring: #3a9b58;
+
+  /* Quiet surface for table headers and inner panels. */
+  --surface: #f8fbf8;
+
+  /* Deep green sidebar with light text; the active item is a solid mid green. The top navbar stays on the canvas colour. */
+  --sidebar: #0b4a33;
+  --sidebar-foreground: #e4f1e8;
+  --sidebar-primary: #3a9b4b;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #145a41;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1b6448;
+  --sidebar-ring: #b4e64e;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-canvas text-foreground text-sm antialiased;
+  }
+  /* Numbers line up in columns: prices, quantities, counts, ages. */
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+}
