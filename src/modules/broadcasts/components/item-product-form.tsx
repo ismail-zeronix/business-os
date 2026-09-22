@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createProductForItemAction, linkItemAction } from "../actions";
 
-export type ProductDefaults = { name: string; brandId: string | null; family: string; model: string; partNumber: string };
+export type ProductDefaults = { name: string; description: string | null; brandId: string | null; family: string; model: string; partNumber: string };
 
 /**
  * Creates a TEMPORARY product from a broadcast item and links it, without leaving the review. Prefilled from what the item says;
@@ -46,6 +46,7 @@ export function ItemProductForm({
     <div className="space-y-4">
       <form action={formAction} className="space-y-4" noValidate>
         <input type="hidden" name="itemId" value={itemId} />
+        {defaults.description ? <input type="hidden" name="description" value={defaults.description} /> : null}
         <FormMessage state={state} />
 
         <div className="grid grid-cols-2 gap-3">

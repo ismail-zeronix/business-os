@@ -41,7 +41,8 @@ export function ItemRow({
   keepQuery: string;
 }) {
   const reasons = ((item.extractedData as { reasons?: string[] } | null)?.reasons ?? []).filter(Boolean);
-  const wording = item.description ?? [item.brandText, item.modelText].filter(Boolean).join(" ");
+  const specPart = item.specText ? ` ${item.specText.trim()}` : "";
+  const wording = `${item.description || [item.brandText, item.modelText].filter(Boolean).join(" ")}${specPart}`.trim();
   const brandId = item.brandText ? (brandOptions.find((b) => normalizeName(b.label) === normalizeName(item.brandText ?? ""))?.value ?? null) : null;
   const price = item.priceAmount && item.currencyCode ? formatMoney(item.priceAmount, item.currencyCode) : item.priceAmount ? `${item.priceAmount.toString()} (no currency)` : null;
   const quantity = formatQuantity(item.quantity);
@@ -79,7 +80,7 @@ export function ItemRow({
                 candidateSpecs={candidateSpecs}
                 currentSpecText={item.specText}
                 aliasWording={wording}
-                createDefaults={{ name: wording, brandId, family: "", model: item.modelText ?? "", partNumber: item.partNumber ?? "" }}
+                createDefaults={{ name: wording, description: item.specText?.trim() || null, brandId, family: "", model: item.modelText ?? "", partNumber: item.partNumber ?? "" }}
                 brandOptions={brandOptions}
                 categoryOptions={categoryOptions}
               />
