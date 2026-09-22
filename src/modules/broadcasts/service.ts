@@ -36,9 +36,12 @@ const broadcastScope = (broadcastId: string) => ({ type: "Broadcast" as const, i
 
 const PRODUCT_NAME_MAX = 250; // productCreateSchema's `name` cap (products/schemas.ts); an item's description allows up to 300.
 
-/** The product name to auto-create from an item with no match: its own description, or "brand model" when there is none. */
-function productNameFromItem(fields: { description: string | null; brandText: string | null; modelText: string | null }): string {
-  const name = fields.description?.trim() || [fields.brandText, fields.modelText].filter(Boolean).join(" ");
+/** The product name to auto-create from an item with no match: concatenates description + specText, or falls back to "brand model". */
+function productNameFromItem(fields: { description: string | null; specText: string | null; brandText: string | null; modelText: string | null }): string {
+  const parts = [];
+  if (fields.description) parts.push(fields.description.trim());
+  if (fields.specText) parts.push(fields.specText.trim());
+  const name = parts.join(" ") || [fields.brandText, fields.modelText].filter(Boolean).join(" ");
   return name.trim().slice(0, PRODUCT_NAME_MAX);
 }
 
@@ -50,13 +53,13 @@ function productNameFromItem(fields: { description: string | null; brandText: st
  * Returns null (item stays unlinked, same as today) on a part-number collision or similar, so one bad line never fails the
  * whole save.
  */
-async function autoCreateProduct(c: ServiceContext, fields: { description: string | null; brandText: string | null; modelText: string | null; partNumber: string | null }) {
+async function autoCreateProduct(c: ServiceContext, fields: { description: string | null; specText: string | null; brandText: string | null; modelText: string | null; partNumber: string | null }) {
   const name = productNameFromItem(fields);
   if (!name) return null;
   const brandKey = fields.brandText?.trim() ? normalizeName(fields.brandText) : null;
   const brand = brandKey ? await c.db.brand.findFirst({ where: { normalizedName: brandKey, status: { not: "ARCHIVED" } }, select: { id: true } }) : null;
   try {
-    return await createProduct(c, productCreateSchema.parse({ name, brandId: brand?.id ?? null, model: fields.modelText, partNumber: fields.partNumber }), { isTemporary: true });
+    return await createProduct(c, productCreateSchema.parse({ name, description: fields.specText?.trim() || null, brandId: brand?.id ?? null, model: fields.modelText, partNumber: fields.partNumber }), { isTemporary: true });
   } catch (error) {
     if (error instanceof DomainError) return null; // part-number collision (or a rare validation edge case): a person resolves it via the picker
     throw error;
@@ -314,7 +317,7 @@ export async function backfillAutoCreateProducts(ctx: ServiceContext): Promise<B
   const items = await ctx.db.broadcastItem.findMany({
     where: { reviewStatus: "PENDING", productId: null },
     orderBy: [{ broadcastId: "asc" }, { position: "asc" }],
-    select: { id: true, broadcastId: true, description: true, brandText: true, modelText: true, partNumber: true },
+    select: { id: true, broadcastId: true, description: true, specText: true, brandText: true, modelText: true, partNumber: true },
   });
 
   const linkedIds: string[] = [];
