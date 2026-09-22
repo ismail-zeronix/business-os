@@ -13,9 +13,11 @@ export function ProductsTable({ rows }: { rows: ProductListRow[] }) {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[34%]">Product</TableHead>
-            <TableHead>Brand</TableHead>
+            <TableHead className="w-[35%]">Product</TableHead>
+            <TableHead>Supplier</TableHead>
             <TableHead>Category</TableHead>
+            <TableHead>Model</TableHead>
+            <TableHead>Part Number</TableHead>
             <TableHead className="text-right">Suppliers</TableHead>
             <TableHead>Latest observation</TableHead>
             <TableHead>Status</TableHead>
@@ -25,13 +27,17 @@ export function ProductsTable({ rows }: { rows: ProductListRow[] }) {
           {rows.map((row) => (
             <TableRow key={row.id} className="relative">
               <TableCell>
-                <Link href={`/products/${row.id}`} className="block truncate font-medium after:absolute after:inset-0 hover:underline focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60 focus-visible:after:ring-inset">
-                  {row.name}
+                <Link href={`/products/${row.id}`} className="block py-2 font-medium after:absolute after:inset-0 hover:underline focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60 focus-visible:after:ring-inset">
+                  <div className="text-sm text-gray-900 break-words">{row.name}</div>
+                  {row.description && (
+                    <div className="text-xs text-gray-500 break-words mt-1 whitespace-pre-wrap">{row.description}</div>
+                  )}
                 </Link>
-                {row.partNumber ? <span className="block truncate font-mono text-xs text-muted-foreground">{row.partNumber}</span> : null}
               </TableCell>
-              <TableCell>{row.brandName ?? <Unknown dash />}</TableCell>
+              <TableCell>{row.brandName ?? "—"}</TableCell>
               <TableCell>{row.categoryName ?? <Unknown dash />}</TableCell>
+              <TableCell>{row.model ?? "—"}</TableCell>
+              <TableCell className="font-mono text-xs">{row.partNumber ?? "—"}</TableCell>
               <TableCell className="num text-right">{row.supplierCount > 0 ? row.supplierCount : <span className="text-muted-foreground">0</span>}</TableCell>
               <TableCell>{row.latestObservedAt ? <FreshnessBadge observedAt={row.latestObservedAt} now={now} /> : <span className="text-muted-foreground">No observations</span>}</TableCell>
               <TableCell>

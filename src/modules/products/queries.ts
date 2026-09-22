@@ -18,6 +18,8 @@ export type ProductListParams = {
 export type ProductListRow = {
   id: string;
   name: string;
+  description: string | null;
+  model: string | null;
   partNumber: string | null;
   brandName: string | null;
   categoryName: string | null;
@@ -77,6 +79,8 @@ export async function searchProducts(params: ProductListParams): Promise<{ rows:
       select: {
         id: true,
         name: true,
+        description: true,
+        model: true,
         partNumber: true,
         isTemporary: true,
         status: true,
@@ -94,6 +98,8 @@ export async function searchProducts(params: ProductListParams): Promise<{ rows:
     rows: products.map((p) => ({
       id: p.id,
       name: p.name,
+      description: p.description,
+      model: p.model,
       partNumber: p.partNumber,
       brandName: p.brand?.name ?? null,
       categoryName: p.category?.name ?? null,
