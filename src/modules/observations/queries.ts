@@ -12,9 +12,9 @@ export async function observationSummaryByProduct(productIds: string[]): Promise
   if (productIds.length === 0) return new Map();
   const rows = await db.$queryRaw<{ product_id: string; supplier_count: number; latest: Date; latest_supplier_name: string | null }[]>(Prisma.sql`
     WITH obs AS (
-      SELECT product_id, supplier_id, observed_at FROM price_observations WHERE retracted_at IS NULL AND product_id = ANY(${productIds}::uuid[])
+      SELECT product_id, supplier_id, observed_at, created_at FROM price_observations WHERE retracted_at IS NULL AND product_id = ANY(${productIds}::uuid[])
       UNION ALL
-      SELECT product_id, supplier_id, observed_at FROM stock_observations WHERE retracted_at IS NULL AND product_id = ANY(${productIds}::uuid[])
+      SELECT product_id, supplier_id, observed_at, created_at FROM stock_observations WHERE retracted_at IS NULL AND product_id = ANY(${productIds}::uuid[])
     ),
     agg AS (
       SELECT product_id, COUNT(DISTINCT supplier_id)::int AS supplier_count, MAX(observed_at) AS latest
@@ -24,7 +24,7 @@ export async function observationSummaryByProduct(productIds: string[]): Promise
     latest_obs AS (
       SELECT DISTINCT ON (product_id) product_id, supplier_id
       FROM obs
-      ORDER BY product_id, observed_at DESC
+      ORDER BY product_id, observed_at DESC, created_at DESC
     )
     SELECT agg.product_id, agg.supplier_count, agg.latest, s.name AS latest_supplier_name
     FROM agg
