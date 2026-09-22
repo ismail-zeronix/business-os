@@ -39,6 +39,7 @@ function tokenClause(token: string): Prisma.ProductWhereInput {
   const code = normalizeCode(token);
   const anyOf: Prisma.ProductWhereInput[] = [
     { name: contains },
+    { description: contains },
     { family: contains },
     { model: contains },
     { partNumber: contains },
