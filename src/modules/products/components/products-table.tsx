@@ -34,7 +34,16 @@ export function ProductsTable({ rows }: { rows: ProductListRow[] }) {
                   )}
                 </Link>
               </TableCell>
-              <TableCell>{row.brandName ?? "—"}</TableCell>
+              <TableCell>
+                {row.supplierName ? (
+                  <>
+                    {row.supplierName}
+                    {row.supplierCount > 1 && <span className="text-muted-foreground text-xs"> +{row.supplierCount - 1}</span>}
+                  </>
+                ) : (
+                  "—"
+                )}
+              </TableCell>
               <TableCell>{row.categoryName ?? <Unknown dash />}</TableCell>
               <TableCell>{row.model ?? "—"}</TableCell>
               <TableCell className="font-mono text-xs">{row.partNumber ?? "—"}</TableCell>

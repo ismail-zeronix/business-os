@@ -25,6 +25,7 @@ export type ProductListRow = {
   categoryName: string | null;
   isTemporary: boolean;
   status: RecordStatus;
+  supplierName: string | null;
   supplierCount: number;
   latestObservedAt: Date | null;
 };
@@ -105,6 +106,7 @@ export async function searchProducts(params: ProductListParams): Promise<{ rows:
       categoryName: p.category?.name ?? null,
       isTemporary: p.isTemporary,
       status: p.status,
+      supplierName: summaries.get(p.id)?.latestSupplierName ?? null,
       supplierCount: summaries.get(p.id)?.supplierCount ?? 0,
       latestObservedAt: summaries.get(p.id)?.latestObservedAt ?? null,
     })),
