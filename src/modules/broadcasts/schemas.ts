@@ -1,11 +1,12 @@
 import { z } from "zod";
-import { EvidenceChannel, StockStatus, VatState } from "../../generated/prisma/enums";
+import { EvidenceChannel, StockStatus, VatState, WarrantyType } from "../../generated/prisma/enums";
 import {
   SUPPORTED_CURRENCIES,
   checkbox,
   enumOrUnknown,
   optionalEnum,
   optionalMoney,
+  optionalPositiveInt,
   optionalQuantity,
   optionalText,
   optionalUuid,
@@ -31,6 +32,8 @@ export const broadcastCreateSchema = z.object({
   allowDuplicate: checkbox(),
   /** Set when this message is a supplier's reply to a sourcing request. */
   supplierRequestId: optionalUuid("Invalid request"),
+  /** Optional fallback: applied only to items the parser could not classify from the text itself. */
+  categoryId: optionalUuid("Choose a valid category"),
 });
 
 /** The reviewable fields of a broadcast item. Every one may be unknown; currency is required only when a price is confirmed. */
@@ -39,12 +42,15 @@ export const itemFieldsSchema = z.object({
   brandText: optionalText(100),
   modelText: optionalText(100),
   partNumber: optionalText(100),
+  categoryText: optionalText(100),
   specText: optionalText(500),
   quantity: optionalQuantity(),
   priceAmount: optionalMoney(),
   currencyCode: optionalEnum(SUPPORTED_CURRENCIES, "currency"),
   vatState: enumOrUnknown(values(VatState), "UNKNOWN", "VAT state"),
   stockStatus: enumOrUnknown(values(StockStatus), "UNKNOWN", "stock status"),
+  warrantyMonths: optionalPositiveInt("Warranty duration"),
+  warrantyType: optionalEnum(values(WarrantyType), "warranty type"),
   notes: optionalText(1000),
 });
 
