@@ -36,12 +36,9 @@ const broadcastScope = (broadcastId: string) => ({ type: "Broadcast" as const, i
 
 const PRODUCT_NAME_MAX = 250; // productCreateSchema's `name` cap (products/schemas.ts); an item's description allows up to 300.
 
-/** The product name to auto-create from an item with no match: concatenates description + specText, or falls back to "brand model". */
-function productNameFromItem(fields: { description: string | null; specText: string | null; brandText: string | null; modelText: string | null }): string {
-  const parts = [];
-  if (fields.description) parts.push(fields.description.trim());
-  if (fields.specText) parts.push(fields.specText.trim());
-  const name = parts.join(" ") || [fields.brandText, fields.modelText].filter(Boolean).join(" ");
+/** The product name to auto-create from an item with no match: uses the item's description, or falls back to "brand model". */
+function productNameFromItem(fields: { description: string | null; brandText: string | null; modelText: string | null }): string {
+  const name = fields.description?.trim() || [fields.brandText, fields.modelText].filter(Boolean).join(" ");
   return name.trim().slice(0, PRODUCT_NAME_MAX);
 }
 

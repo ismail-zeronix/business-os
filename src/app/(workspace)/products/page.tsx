@@ -48,7 +48,7 @@ export default async function ProductsPage(props: PageProps<"/products">) {
 
       <Panel flush>
       <FilterBar clearHref="/products" hasActiveFilters={filtered}>
-        <SearchInput placeholder="Search name, model, part number, alias, brand" className="w-96" />
+        <SearchInput placeholder="Search name, specs, model, part number, alias, brand" className="w-96" />
         <FilterSelect param="brand" allLabel="All brands" options={brandOptions} />
         <FilterSelect param="category" allLabel="All categories" options={categoryOptions} />
         <FilterSelect param="status" allLabel="Active and inactive" options={toOptions(RECORD_STATUS_LABEL)} />

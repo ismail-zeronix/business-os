@@ -102,10 +102,10 @@ RAW BROADCAST (sticky, mono)          EXTRACTED ITEMS
 Procurement search: one box (part number, model, alias or words). Matched products, exact and probable hits from the matcher first with a label ("Exact · Part number"), then the word matches; at most 20, with the total and "add a word to narrow it" when there are more. Each product is a block: name, part number, brand, category, Temporary badge, alias chips, then the supplier table (supplier, latest price with VAT, latest stock, freshness, evidence icon that opens the evidence drawer). A product with no observations says so. No cross-supplier best price. Empty query and no-match states point at the next action.
 
 ## Products `/products`
-Single search (name, model, part number, alias, brand) + brand / category / temporary / status filters.
+Single search (name, description/specs, model, part number, alias, brand) + brand / category / temporary / status filters.
 ```
-Product                              Brand    Category   Suppliers   Latest observation
-Lenovo V15 G4 IRU  83A100SUAK        Lenovo   Laptop     2           2h ago
+Product                              Supplier              Brand    Category   Model   Part Number   Suppliers   Latest observation   Status
+Lenovo V15 G4 IRU  83A100SUAK        SUPERTECH COMPUTERS    Lenovo   Laptop     V15G4   83A100SUAK    2           2h ago                Confirmed
 ```
 "+ Add product" opens a drawer. Empty: "No products match. Add a product or paste a broadcast."
 
