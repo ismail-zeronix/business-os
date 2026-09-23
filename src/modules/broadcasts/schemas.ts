@@ -10,6 +10,7 @@ import {
   optionalQuantity,
   optionalText,
   optionalUuid,
+  stringArray,
 } from "../../core/validation/fields";
 import { productProfileSchema } from "../products/schemas";
 
@@ -55,6 +56,32 @@ export const itemFieldsSchema = z.object({
 });
 
 export const itemUpdateSchema = itemFieldsSchema.extend({ id: z.uuid() });
+
+/**
+ * The bulk review table: one repeated form field per column, one entry per row, all arrays the same length as `id`. The
+ * action zips them back into one `ItemUpdateInput` per row and validates each with `itemUpdateSchema`, so a row-level error
+ * behaves exactly like a single-item save's validation error.
+ */
+export const bulkApplyItemsSchema = z.object({
+  broadcastId: z.uuid(),
+  id: stringArray(),
+  description: stringArray(),
+  brandText: stringArray(),
+  modelText: stringArray(),
+  categoryText: stringArray(),
+  partNumber: stringArray(),
+  specText: stringArray(),
+  quantity: stringArray(),
+  priceAmount: stringArray(),
+  currencyCode: stringArray(),
+  vatState: stringArray(),
+  stockStatus: stringArray(),
+  warrantyMonths: stringArray(),
+  warrantyType: stringArray(),
+  notes: stringArray(),
+});
+export type BulkApplyItemsInput = z.output<typeof bulkApplyItemsSchema>;
+
 export const itemManualCreateSchema = itemFieldsSchema.extend({ broadcastId: z.uuid(), sourceText: optionalText(2000) });
 export const itemLinkSchema = z.object({ itemId: z.uuid(), productId: optionalUuid(), rememberAlias: checkbox() });
 export const itemCreateProductSchema = productProfileSchema.extend({ itemId: z.uuid(), rememberAlias: checkbox() });

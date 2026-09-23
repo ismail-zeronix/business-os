@@ -64,6 +64,13 @@ export const idList = () =>
     )
     .transform((ids) => [...new Set(ids)]);
 
+/**
+ * A list of raw strings from repeated form fields, always an array even for a single row (HTML form submission collapses a
+ * single repeated field to one value, same as `idList` handles for uuids). Used by the bulk review table, where every column
+ * is submitted as one repeated field, one entry per table row, all arrays the same length.
+ */
+export const stringArray = () => z.preprocess((value) => (value === undefined ? [] : Array.isArray(value) ? value : [value]), z.array(z.string()));
+
 /** Optional reference to another record by id (e.g. a brand). Blank means "not set". */
 export const optionalUuid = (message = "Invalid selection") =>
   z

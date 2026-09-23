@@ -69,6 +69,19 @@ async function main() {
 
       await expectReject(tx, "broadcast_items rejects a negative warranty_months", () => tx.broadcastItem.update({ where: { id: item.id }, data: { warrantyMonths: -1 } }));
 
+      // bulkUpdateItems: single-row case (the array-of-one edge case) must still work
+      const item2 = await tx.broadcastItem.create({ data: { broadcastId: broadcast.id, position: 2, sourceText: "TEST row 2", origin: "MANUAL" } });
+      const bulkCtx = { actor: { id: actorUser.id, email: actorUser.email, name: actorUser.name, role: actorUser.role }, db: tx };
+      const { bulkUpdateItems } = await import("../src/modules/broadcasts/service");
+      const result = await bulkUpdateItems(bulkCtx, { broadcastId: broadcast.id, rows: [{ id: item2.id, description: "TEST bulk-updated description", brandText: "", modelText: "", categoryText: "Laptop", partNumber: "", specText: "", quantity: "", priceAmount: "", currencyCode: "", vatState: "", stockStatus: "", warrantyMonths: "12", warrantyType: "ON_SITE", notes: "" }] });
+      check("bulkUpdateItems updates a single row (array-of-one case)", result.updated === 1);
+      const reloaded = await tx.broadcastItem.findUnique({ where: { id: item2.id } });
+      check("bulkUpdateItems persisted the description, category and warranty", reloaded?.description === "TEST bulk-updated description" && reloaded?.categoryText === "Laptop" && reloaded?.warrantyMonths === 12 && reloaded?.warrantyType === "ON_SITE");
+
+      // Re-applying with no actual changes updates 0
+      const result2 = await bulkUpdateItems(bulkCtx, { broadcastId: broadcast.id, rows: [{ id: item2.id, description: "TEST bulk-updated description", brandText: "", modelText: "", categoryText: "Laptop", partNumber: "", specText: "", quantity: "", priceAmount: "", currencyCode: "", vatState: "", stockStatus: "", warrantyMonths: "12", warrantyType: "ON_SITE", notes: "" }] });
+      check("bulkUpdateItems is a no-op when nothing changed", result2.updated === 0);
+
       throw new Rollback("rollback");
     });
   } catch (e) {

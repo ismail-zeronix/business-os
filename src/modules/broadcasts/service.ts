@@ -14,7 +14,7 @@ import { addAlias, createProduct } from "../products/service";
 import { assertRequestAcceptsReply, markRequestReplied } from "../sourcing/service";
 import { rulesParser } from "./parsing/rules-parser";
 import { isItemReady } from "./readiness";
-import type { BroadcastArchiveInput, ItemCreateProductInput, ItemLinkInput, ItemManualCreateInput, ItemReasonInput, ItemUpdateInput } from "./schemas";
+import { itemUpdateSchema, type BroadcastArchiveInput, type ItemCreateProductInput, type ItemLinkInput, type ItemManualCreateInput, type ItemReasonInput, type ItemUpdateInput } from "./schemas";
 
 /**
  * Broadcast review workflow. The original message is stored as immutable evidence; parsed lines become PENDING items (proposals);
@@ -202,6 +202,31 @@ export async function updateItem(ctx: ServiceContext, input: ItemUpdateInput) {
     const updated = await c.db.broadcastItem.update({ where: { id }, data: fields });
     await writeAudit(c, { action: "broadcast_item.updated", entityType: "BroadcastItem", entityId: id, scope: broadcastScope(item.broadcastId), details: changes });
     return updated;
+  });
+}
+
+const BULK_ROW_KEYS = ["id", "description", "brandText", "modelText", "categoryText", "partNumber", "specText", "quantity", "priceAmount", "currencyCode", "vatState", "stockStatus", "warrantyMonths", "warrantyType", "notes"] as const;
+
+/**
+ * The bulk review table's "Apply all": saves corrected values onto every changed PENDING item in one transaction, reusing
+ * updateItem's own validation, diffing and audit row per item (one broadcast_item.updated row per changed item — no new
+ * audit vocabulary). It never confirms, links a product, or changes review_status; that still happens afterward in the
+ * existing per-item flow. An item no longer PENDING when this runs (someone else confirmed it in the meantime) is skipped,
+ * not failed, so one stale row never blocks the rest.
+ */
+export async function bulkUpdateItems(ctx: ServiceContext, input: { broadcastId: string; rows: Record<(typeof BULK_ROW_KEYS)[number], string>[] }) {
+  return inTransaction(ctx, async (c) => {
+    const broadcast = await c.db.broadcast.findUnique({ where: { id: input.broadcastId }, select: { id: true } });
+    if (!broadcast) throw new NotFoundError("Broadcast");
+
+    let updated = 0;
+    for (const row of input.rows) {
+      const before = await c.db.broadcastItem.findUnique({ where: { id: row.id } });
+      if (!before || before.reviewStatus !== "PENDING") continue; // reviewed elsewhere in the meantime: leave it, don't fail the batch
+      const after = await updateItem(c, itemUpdateSchema.parse(row));
+      if (after.updatedAt.getTime() !== before.updatedAt.getTime()) updated++;
+    }
+    return { updated };
   });
 }
 

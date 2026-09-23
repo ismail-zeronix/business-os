@@ -11,6 +11,7 @@ import {
   broadcastArchiveSchema,
   broadcastCreateSchema,
   broadcastIdSchema,
+  bulkApplyItemsSchema,
   itemCreateProductSchema,
   itemLinkSchema,
   itemManualCreateSchema,
@@ -19,6 +20,7 @@ import {
 } from "./schemas";
 import {
   addManualItem,
+  bulkUpdateItems,
   confirmReadyItems,
   createBroadcast,
   createProductForItem,
@@ -82,6 +84,43 @@ export async function saveItemAction(_prev: IdResult | null, formData: FormData)
       return { id: item.broadcastId };
     },
     { successMessage: confirming ? "Item confirmed" : "Item saved", formData },
+  );
+}
+
+export type BulkApplyResult = { id: string; updated: number };
+
+/** "Apply all" on the bulk review table: zips the parallel column arrays back into one row per item and saves them all in one transaction. */
+export async function bulkApplyItemsAction(_prev: ActionResult<BulkApplyResult> | null, formData: FormData): Promise<ActionResult<BulkApplyResult>> {
+  return runAction(
+    async () => {
+      const input = bulkApplyItemsSchema.parse(formDataToObject(formData));
+      const length = input.id.length;
+      const mismatched = (Object.keys(input) as (keyof typeof input)[]).filter((key) => key !== "broadcastId" && Array.isArray(input[key]) && (input[key] as string[]).length !== length);
+      if (mismatched.length > 0) throw new ValidationError("The review table did not submit correctly. Reload the page and try again.");
+
+      const rows = input.id.map((id, i) => ({
+        id,
+        description: input.description[i] ?? "",
+        brandText: input.brandText[i] ?? "",
+        modelText: input.modelText[i] ?? "",
+        categoryText: input.categoryText[i] ?? "",
+        partNumber: input.partNumber[i] ?? "",
+        specText: input.specText[i] ?? "",
+        quantity: input.quantity[i] ?? "",
+        priceAmount: input.priceAmount[i] ?? "",
+        currencyCode: input.currencyCode[i] ?? "",
+        vatState: input.vatState[i] ?? "",
+        stockStatus: input.stockStatus[i] ?? "",
+        warrantyMonths: input.warrantyMonths[i] ?? "",
+        warrantyType: input.warrantyType[i] ?? "",
+        notes: input.notes[i] ?? "",
+      }));
+
+      const { updated } = await bulkUpdateItems(await getServiceContext(), { broadcastId: input.broadcastId, rows });
+      refreshBroadcast(input.broadcastId);
+      return { id: input.broadcastId, updated };
+    },
+    { formData },
   );
 }
 
