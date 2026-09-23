@@ -61,6 +61,8 @@ enum EvidenceChannel {
   WHATSAPP
   EMAIL
   PHONE
+  /// Compiled by the AI enquiry-intake chat from a conversation, not typed or pasted directly.
+  ASSISTANT
   OTHER
 }
 

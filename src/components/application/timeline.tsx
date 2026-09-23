@@ -2,6 +2,7 @@ import { Panel } from "@/components/application/page-canvas";
 import { EmptyState } from "@/components/application/states";
 import { formatDateTime, formatRelativeAge } from "@/lib/format";
 import { auditActionLabel, describeDetails } from "@/modules/audit/describe";
+import { AUDIT_TONE_CLASS, auditActionVisual } from "@/modules/audit/icons";
 import type { AuditRow } from "@/modules/audit/queries";
 
 /** Activity timeline built from audit rows (time, actor, what happened, a short line per change), on its own panel (`flat`: the list only, for use inside another card). */
@@ -18,26 +19,34 @@ export function Timeline({ rows, emptyTitle = "No activity yet", flat = false }:
   const now = new Date();
 
   const list = (
-      <ol className="relative ml-1 space-y-4 border-l pl-5">
-        {rows.map((row) => {
+      <ol className="space-y-1">
+        {rows.map((row, index) => {
           const lines = describeDetails(row.details);
+          const { icon: Icon, tone } = auditActionVisual(row.action);
           return (
-            <li key={row.id} className="relative">
-              <span aria-hidden className="absolute top-1.5 -left-[25px] size-2 rounded-full border border-background bg-muted-foreground/50 ring-2 ring-background" />
-              <div className="flex flex-wrap items-baseline gap-x-2">
-                <span className="text-sm font-medium">{auditActionLabel(row.action)}</span>
-                <span className="text-xs text-muted-foreground">by {row.actorName ?? "System"}</span>
-                <time dateTime={row.createdAt.toISOString()} title={formatDateTime(row.createdAt)} className="num text-xs text-muted-foreground">
-                  {formatRelativeAge(row.createdAt, now)}
-                </time>
+            <li key={row.id} className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <span aria-hidden className={`flex size-7 shrink-0 items-center justify-center rounded-full ${AUDIT_TONE_CLASS[tone]}`}>
+                  <Icon className="size-3.5" strokeWidth={1.5} />
+                </span>
+                {index < rows.length - 1 ? <span aria-hidden className="my-0.5 w-px flex-1 bg-border" /> : null}
               </div>
-              {lines.length ? (
-                <ul className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
-                  {lines.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              ) : null}
+              <div className="min-w-0 flex-1 pb-4">
+                <div className="flex flex-wrap items-baseline gap-x-2 pt-1">
+                  <span className="text-sm font-medium">{auditActionLabel(row.action)}</span>
+                  <span className="text-xs text-muted-foreground">by {row.actorName ?? "System"}</span>
+                  <time dateTime={row.createdAt.toISOString()} title={formatDateTime(row.createdAt)} className="num text-xs text-muted-foreground">
+                    {formatRelativeAge(row.createdAt, now)}
+                  </time>
+                </div>
+                {lines.length ? (
+                  <ul className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
+                    {lines.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
             </li>
           );
         })}

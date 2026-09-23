@@ -42,6 +42,8 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "customer_contact.created": "Customer contact added",
   "customer_contact.updated": "Customer contact updated",
   "customer_contact.archived": "Customer contact archived",
+  "customer.note_added": "Note added",
+  "customer.call_logged": "Call logged",
   "enquiry.created": "Enquiry created",
   "enquiry.updated": "Enquiry updated",
   "enquiry.status_changed": "Enquiry status changed",

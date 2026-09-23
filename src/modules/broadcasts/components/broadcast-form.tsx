@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { EVIDENCE_CHANNEL_LABEL, toOptions } from "@/lib/labels";
 import { createBroadcastAction } from "../actions";
 import { matchExactlyOne, readHeaderNames } from "../parsing/header-lines";
+import { BROADCAST_ENTRY_CHANNELS } from "../schemas";
 import { MentionTextarea, type MentionContact } from "./mention-textarea";
 import { Alert } from "@/components/ui/alert";
 
@@ -142,7 +143,13 @@ export function BroadcastForm({
           />
         </Field>
         <Field label="Received via" htmlFor="bf-channel" error={err("channel")}>
-          <SelectField id="bf-channel" name="channel" allowNone={false} defaultValue={fieldValue(state, "channel", "MANUAL_PASTE")} options={toOptions(EVIDENCE_CHANNEL_LABEL)} />
+          <SelectField
+            id="bf-channel"
+            name="channel"
+            allowNone={false}
+            defaultValue={fieldValue(state, "channel", "MANUAL_PASTE")}
+            options={toOptions(EVIDENCE_CHANNEL_LABEL, BROADCAST_ENTRY_CHANNELS)}
+          />
         </Field>
         <Field label="Received at (Dubai time)" htmlFor="bf-receivedAt" required error={err("receivedAt")} hint="When the supplier sent it. Freshness is measured from this time.">
           <Input id="bf-receivedAt" name="receivedAt" type="datetime-local" defaultValue={fieldValue(state, "receivedAt", defaultReceivedAt)} aria-invalid={Boolean(err("receivedAt"))} />

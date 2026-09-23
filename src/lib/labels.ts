@@ -20,6 +20,7 @@ import type {
   VatState,
   WarrantyType,
 } from "../generated/prisma/enums";
+import type { CallDirection, CallOutcome } from "../modules/customers/schemas";
 
 /** Human labels for enums: one place, so wording never drifts between screens (docs/design/UI_SYSTEM.md section 6). Pure, client-safe. */
 
@@ -47,6 +48,18 @@ export const PREFERRED_CHANNEL_LABEL: Record<PreferredChannel, string> = {
   EMAIL: "Email",
 };
 
+export const CALL_DIRECTION_LABEL: Record<CallDirection, string> = {
+  OUTBOUND: "Outbound",
+  INBOUND: "Inbound",
+};
+
+export const CALL_OUTCOME_LABEL: Record<CallOutcome, string> = {
+  REACHED: "Reached",
+  NO_ANSWER: "No answer",
+  LEFT_VOICEMAIL: "Left voicemail",
+  CALLBACK_REQUESTED: "Callback requested",
+};
+
 /** What kind of proof a price rests on. A direct confirmation is a person typing what a supplier told them, with a note as the record. */
 export const EVIDENCE_KIND_LABEL: Record<EvidenceKind, string> = {
   SUPPLIER_BROADCAST: "Supplier message",
@@ -60,6 +73,7 @@ export const EVIDENCE_CHANNEL_LABEL: Record<EvidenceChannel, string> = {
   PHONE: "Phone call",
   WHATSAPP: "WhatsApp",
   EMAIL: "Email",
+  ASSISTANT: "AI chat",
   OTHER: "Other",
 };
 
@@ -72,6 +86,7 @@ export const STOCK_STATUS_LABEL: Record<StockStatus, string> = {
   OUT_OF_STOCK: "Out of stock",
   UNKNOWN: "Unknown",
 };
+
 export const WARRANTY_TYPE_LABEL: Record<WarrantyType, string> = {
   CARRY_IN: "Carry-in",
   ON_SITE: "On-site",

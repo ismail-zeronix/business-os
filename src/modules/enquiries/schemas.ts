@@ -1,12 +1,14 @@
 import { z } from "zod";
-import { EnquiryStatus, EvidenceChannel } from "../../generated/prisma/enums";
+import { EnquiryStatus } from "../../generated/prisma/enums";
 import { checkbox, optionalEmail, optionalText, optionalUuid, requiredEnum, requiredText } from "../../core/validation/fields";
 import { productProfileSchema } from "../products/schemas";
 
-const values = <T extends string>(obj: Record<string, T>) => Object.values(obj) as [T, ...T[]];
 const blankToNull = (value: unknown): unknown => (typeof value === "string" && value.trim() === "" ? null : value);
 
 export const MAX_RAW_TEXT = 50_000;
+
+/** Channels a person can pick when entering an enquiry by hand. ASSISTANT is set only by the AI chat's own draft-enquiry tool. */
+export const ENQUIRY_ENTRY_CHANNELS = ["MANUAL_PASTE", "WHATSAPP", "EMAIL", "PHONE", "OTHER"] as const;
 
 const ENQUIRY_PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"] as const;
 
@@ -36,7 +38,7 @@ export const enquiryCreateSchema = z.object({
   contactId: optionalUuid("Choose a valid contact"),
   requesterName: optionalText(200),
   requesterEmail: optionalEmail(),
-  channel: z.enum(values(EvidenceChannel), { error: "Choose how it was received" }).default("MANUAL_PASTE"),
+  channel: z.enum(ENQUIRY_ENTRY_CHANNELS, { error: "Choose how it was received" }).default("MANUAL_PASTE"),
   /** datetime-local text in the business timezone; converted to a UTC instant by the action. */
   receivedAt: z.string().min(1, "Enter when the request was received"),
   subject: optionalText(300),

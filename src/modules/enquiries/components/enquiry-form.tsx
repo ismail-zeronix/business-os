@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { EVIDENCE_CHANNEL_LABEL, toOptions } from "@/lib/labels";
 import { createEnquiryAction } from "../actions";
+import { ENQUIRY_ENTRY_CHANNELS } from "../schemas";
 
 type ContactOption = SelectOption & { customerId: string };
 
@@ -73,7 +74,13 @@ export function EnquiryForm({
         ) : null}
 
         <Field label="Received via" htmlFor="ef-channel" error={err("channel")}>
-          <SelectField id="ef-channel" name="channel" allowNone={false} defaultValue={fieldValue(state, "channel", "MANUAL_PASTE")} options={toOptions(EVIDENCE_CHANNEL_LABEL)} />
+          <SelectField
+            id="ef-channel"
+            name="channel"
+            allowNone={false}
+            defaultValue={fieldValue(state, "channel", "MANUAL_PASTE")}
+            options={toOptions(EVIDENCE_CHANNEL_LABEL, ENQUIRY_ENTRY_CHANNELS)}
+          />
         </Field>
         <Field label="Received at (Dubai time)" htmlFor="ef-receivedAt" required error={err("receivedAt")} hint="When the customer sent it. Age is measured from this time.">
           <Input id="ef-receivedAt" name="receivedAt" type="datetime-local" defaultValue={fieldValue(state, "receivedAt", defaultReceivedAt)} aria-invalid={Boolean(err("receivedAt"))} />

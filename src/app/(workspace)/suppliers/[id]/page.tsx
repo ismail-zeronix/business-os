@@ -1,9 +1,10 @@
 import { requireActor } from "@/core/permissions/actor";
-import { Pencil, Plus } from "lucide-react";
+import { Globe, Mail, MapPin, MessageCircle, Pencil, Phone, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
+import { ContactInfoList } from "@/components/application/contact-info";
 import { KeyValue } from "@/components/application/key-value";
 import { PageBody, PanelSection } from "@/components/application/page-canvas";
 import { PageHeader } from "@/components/application/page-header";
@@ -15,6 +16,7 @@ import { Timeline } from "@/components/application/timeline";
 import { FormDrawer } from "@/components/forms/form-drawer";
 import { RecordStatusControl } from "@/components/forms/record-status-control";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { SUPPLIER_TYPE_LABEL } from "@/lib/labels";
 import { buildHref, firstParam } from "@/lib/search-params";
 import { listActivity } from "@/modules/audit/queries";
@@ -97,6 +99,7 @@ export default async function SupplierDetailPage(props: PageProps<"/suppliers/[i
 
   const location = [supplier.area, supplier.emirate, supplier.country].filter(Boolean).join(", ");
   const subtitle = [supplier.type ? SUPPLIER_TYPE_LABEL[supplier.type] : null, location || null].filter(Boolean).join(" · ");
+  const fullAddress = [supplier.address, location || null].filter(Boolean).join(", ") || null;
   const basePath = `/suppliers/${id}`;
 
   return (
@@ -129,22 +132,28 @@ export default async function SupplierDetailPage(props: PageProps<"/suppliers/[i
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div className="space-y-4 lg:col-span-2">
               <PanelSection title="Profile">
+                <ContactInfoList
+                  items={[
+                    { icon: Phone, label: "Phone", value: supplier.phone },
+                    { icon: MessageCircle, label: "WhatsApp", value: supplier.whatsapp },
+                    { icon: Mail, label: "Email", value: supplier.email },
+                    // A React element that renders nothing is not "null", so pass null explicitly when there is no website.
+                    { icon: Globe, label: "Website", value: supplier.website ? <WebsiteLink url={supplier.website} /> : null },
+                    { icon: MapPin, label: "Address", value: fullAddress },
+                  ]}
+                />
+                <Separator className="my-4" />
                 <KeyValue
                   items={[
                     { label: "Legal name", value: supplier.legalName },
                     { label: "Supplier code", value: supplier.code, mono: true },
                     { label: "Type", value: supplier.type ? SUPPLIER_TYPE_LABEL[supplier.type] : null },
                     { label: "TRN", value: supplier.trn, mono: true },
-                    { label: "Location", value: location || null },
-                    { label: "Address", value: supplier.address },
-                    { label: "Phone", value: supplier.phone },
-                    { label: "WhatsApp", value: supplier.whatsapp },
-                    { label: "Email", value: supplier.email },
-                    // A React element that renders nothing is not "null", so pass null explicitly when there is no website.
-                    { label: "Website", value: supplier.website ? <WebsiteLink url={supplier.website} /> : null },
                   ]}
-                  columns={3}
                 />
+                <Separator className="my-4" />
+                <div className="text-xs text-muted-foreground">Notes</div>
+                <div className="mt-1">{supplier.notes ? <p className="text-sm whitespace-pre-wrap">{supplier.notes}</p> : <Unknown />}</div>
               </PanelSection>
 
               <PanelSection title="Procurement profile">
@@ -156,10 +165,6 @@ export default async function SupplierDetailPage(props: PageProps<"/suppliers/[i
                     { label: "Delivery notes", value: supplier.deliveryNotes },
                   ]}
                 />
-              </PanelSection>
-
-              <PanelSection title="Notes">
-                {supplier.notes ? <p className="text-sm whitespace-pre-wrap">{supplier.notes}</p> : <Unknown />}
               </PanelSection>
             </div>
 

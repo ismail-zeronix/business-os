@@ -1,9 +1,10 @@
 import { ConflictError, NotFoundError, uniqueViolation } from "../../core/errors";
 import { inTransaction, type ServiceContext } from "../../core/database/tx";
 import { diffFields, hasChanges } from "../../lib/diff";
+import { CALL_DIRECTION_LABEL, CALL_OUTCOME_LABEL } from "../../lib/labels";
 import { normalizeName } from "../../lib/normalize";
 import { writeAudit } from "../audit/service";
-import type { CustomerCreateInput, CustomerStatusInput, CustomerUpdateInput } from "./schemas";
+import type { CustomerCallInput, CustomerCreateInput, CustomerNoteInput, CustomerStatusInput, CustomerUpdateInput } from "./schemas";
 
 /** Fields whose changes are recorded in the audit log. */
 const PROFILE_FIELDS = ["name", "legalName", "trn", "country", "emirate", "website", "phone", "email", "notes"] as const;
@@ -69,5 +70,28 @@ export async function setCustomerStatus(ctx: ServiceContext, input: CustomerStat
       details: { status: { from: existing.status, to: input.status } },
     });
     return updated;
+  });
+}
+
+/** A note is an append-only audit entry (no notes table), same as an enquiry note. It appears in the customer's Activity tab. */
+export async function addCustomerNote(ctx: ServiceContext, input: CustomerNoteInput) {
+  return inTransaction(ctx, async (c) => {
+    const existing = await c.db.customer.findUnique({ where: { id: input.id }, select: { id: true } });
+    if (!existing) throw new NotFoundError("Customer");
+    await writeAudit(c, { action: "customer.note_added", entityType: "Customer", entityId: input.id, details: { note: input.note } });
+  });
+}
+
+/** A call is logged the same way as a note, with direction and outcome recorded alongside the free text. */
+export async function logCustomerCall(ctx: ServiceContext, input: CustomerCallInput) {
+  return inTransaction(ctx, async (c) => {
+    const existing = await c.db.customer.findUnique({ where: { id: input.id }, select: { id: true } });
+    if (!existing) throw new NotFoundError("Customer");
+    await writeAudit(c, {
+      action: "customer.call_logged",
+      entityType: "Customer",
+      entityId: input.id,
+      details: { direction: CALL_DIRECTION_LABEL[input.direction], outcome: CALL_OUTCOME_LABEL[input.outcome], note: input.note ?? undefined },
+    });
   });
 }

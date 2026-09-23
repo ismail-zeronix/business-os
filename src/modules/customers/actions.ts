@@ -6,14 +6,16 @@ import { runAction, type ActionResult } from "@/core/validation/action-result";
 import { formDataToObject } from "@/core/validation/form-data";
 import { addCustomerContact, setCustomerContactStatus, updateCustomerContact } from "./contact.service";
 import {
+  customerCallSchema,
   customerContactCreateSchema,
   customerContactStatusSchema,
   customerContactUpdateSchema,
   customerCreateSchema,
+  customerNoteSchema,
   customerStatusSchema,
   customerUpdateSchema,
 } from "./schemas";
-import { createCustomer, setCustomerStatus, updateCustomer } from "./service";
+import { addCustomerNote, createCustomer, logCustomerCall, setCustomerStatus, updateCustomer } from "./service";
 
 /** Thin server actions: FormData -> zod -> service -> revalidate -> ActionResult. All business rules live in the services. */
 type IdResult = ActionResult<{ id: string }>;
@@ -92,5 +94,29 @@ export async function setCustomerContactStatusAction(_prev: IdResult | null, for
       return { id: contact.id };
     },
     { successMessage: "Contact updated", formData },
+  );
+}
+
+export async function addCustomerNoteAction(_prev: IdResult | null, formData: FormData): Promise<IdResult> {
+  return runAction(
+    async () => {
+      const input = customerNoteSchema.parse(formDataToObject(formData));
+      await addCustomerNote(await getServiceContext(), input);
+      revalidateCustomer(input.id);
+      return { id: input.id };
+    },
+    { successMessage: "Note added", formData },
+  );
+}
+
+export async function logCustomerCallAction(_prev: IdResult | null, formData: FormData): Promise<IdResult> {
+  return runAction(
+    async () => {
+      const input = customerCallSchema.parse(formDataToObject(formData));
+      await logCustomerCall(await getServiceContext(), input);
+      revalidateCustomer(input.id);
+      return { id: input.id };
+    },
+    { successMessage: "Call logged", formData },
   );
 }

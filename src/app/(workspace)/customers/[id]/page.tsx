@@ -1,9 +1,10 @@
 import { requireActor } from "@/core/permissions/actor";
-import { Pencil, Plus } from "lucide-react";
+import { Globe, Mail, MapPin, Pencil, Phone, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
+import { ContactInfoList } from "@/components/application/contact-info";
 import { KeyValue } from "@/components/application/key-value";
 import { PageBody, Panel, PanelSection } from "@/components/application/page-canvas";
 import { PageHeader } from "@/components/application/page-header";
@@ -16,9 +17,11 @@ import { Pagination } from "@/components/data-table/pagination";
 import { FormDrawer } from "@/components/forms/form-drawer";
 import { RecordStatusControl } from "@/components/forms/record-status-control";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { firstParam, parsePage } from "@/lib/search-params";
 import { listActivity } from "@/modules/audit/queries";
 import { setCustomerStatusAction } from "@/modules/customers/actions";
+import { CustomerActivityComposer } from "@/modules/customers/components/activity-composer";
 import { CustomerContactsPanel } from "@/modules/customers/components/contacts-panel";
 import { CustomerForm } from "@/modules/customers/components/customer-form";
 import { countCustomerContacts, getCustomer, listCustomerContacts } from "@/modules/customers/queries";
@@ -120,31 +123,33 @@ export default async function CustomerDetailPage(props: PageProps<"/customers/[i
 
       <PageBody>
         {tab === "overview" ? (
-          <div className="space-y-4">
-            <PanelSection title="Profile">
-              <KeyValue
-                items={[
-                  { label: "Legal name", value: customer.legalName },
-                  { label: "TRN", value: customer.trn, mono: true },
-                  { label: "Location", value: location || null },
-                  { label: "Phone", value: customer.phone },
-                  { label: "Email", value: customer.email },
-                  { label: "Website", value: customer.website ? <WebsiteLink url={customer.website} /> : null },
-                ]}
-                columns={3}
-              />
-            </PanelSection>
-            <PanelSection title="Notes">
-              {customer.notes ? <p className="text-sm whitespace-pre-wrap">{customer.notes}</p> : <Unknown />}
-            </PanelSection>
-          </div>
+          <PanelSection title="Profile">
+            <ContactInfoList
+              items={[
+                { icon: Phone, label: "Phone", value: customer.phone },
+                { icon: Mail, label: "Email", value: customer.email },
+                { icon: Globe, label: "Website", value: customer.website ? <WebsiteLink url={customer.website} /> : null },
+                { icon: MapPin, label: "Location", value: location || null },
+              ]}
+            />
+            <Separator className="my-4" />
+            <KeyValue items={[{ label: "Legal name", value: customer.legalName }, { label: "TRN", value: customer.trn, mono: true }]} />
+            <Separator className="my-4" />
+            <div className="text-xs text-muted-foreground">Notes</div>
+            <div className="mt-1">{customer.notes ? <p className="text-sm whitespace-pre-wrap">{customer.notes}</p> : <Unknown />}</div>
+          </PanelSection>
         ) : null}
 
         {tab === "contacts" ? <CustomerContactsPanel customerId={id} contacts={await listCustomerContacts(id, { includeArchived: true })} customerArchived={customer.status === "ARCHIVED"} /> : null}
 
         {tab === "enquiries" ? <CustomerEnquiries customerId={id} archived={customer.status === "ARCHIVED"} page={parsePage(searchParams)} searchParams={searchParams} /> : null}
 
-        {tab === "activity" ? <Timeline rows={await listActivity({ type: "Customer", id })} emptyTitle="No activity recorded yet" /> : null}
+        {tab === "activity" ? (
+          <>
+            <CustomerActivityComposer customerId={id} />
+            <Timeline rows={await listActivity({ type: "Customer", id })} emptyTitle="No activity recorded yet" />
+          </>
+        ) : null}
       </PageBody>
     </>
   );

@@ -68,6 +68,8 @@ export type AuditAction =
   | "customer_contact.created"
   | "customer_contact.updated"
   | "customer_contact.archived"
+  | "customer.note_added"
+  | "customer.call_logged"
   | "enquiry.created"
   | "enquiry.updated"
   | "enquiry.status_changed"

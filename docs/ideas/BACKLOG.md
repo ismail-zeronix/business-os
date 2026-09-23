@@ -77,7 +77,7 @@ Ideas that are **not authorised for implementation**. Do not build these unless 
 - An internal note per line (not printed), and a cost the buyer types by hand when no supplier price exists (today cost is always a supplier observation).
 
 ## Email quotations (deferred from the first sending milestone, 2026-09-21)
-- **Customer Timeline tab** merging enquiries, quotations (created, issued, revised, emailed), emails sent and received (matched by contact address) and **notes and calls**, with filter chips and a quick "Log a note"; the same feed on each enquiry and quotation. Today sending shows on the customer's Activity tab through the audit log.
+- **Merging the customer Activity tab** with enquiries, quotations (created, issued, revised, emailed) and emails received matched by contact address, with filter chips, and showing the same merged feed on each enquiry and quotation page. (2026-09-23: logging a note or a call, and quotation-emailed events, already appear today — see `docs/plans/active/CURRENT.md`.)
 - Moving the enquiry to **Quoted** with one click after emailing; a "Follow up in N days" reminder.
 - HTML email with the Business OS look, reply and thread linking for mail the customer sends back, and showing replies on the quotation.
 - Sending other documents (a supplier request, an order confirmation), several attachments, and templates per customer or per language.

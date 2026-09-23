@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EvidenceChannel, StockStatus, VatState, WarrantyType } from "../../generated/prisma/enums";
+import { StockStatus, VatState, WarrantyType } from "../../generated/prisma/enums";
 import {
   SUPPORTED_CURRENCIES,
   checkbox,
@@ -18,11 +18,14 @@ const values = <T extends string>(obj: Record<string, T>) => Object.values(obj) 
 
 export const MAX_RAW_TEXT = 50_000;
 
+/** Channels a person can pick when entering a broadcast by hand. ASSISTANT does not apply here: the AI chat only drafts enquiries. */
+export const BROADCAST_ENTRY_CHANNELS = ["MANUAL_PASTE", "WHATSAPP", "EMAIL", "PHONE", "OTHER"] as const;
+
 /** A new broadcast. The raw text is kept EXACTLY as pasted (no trimming); it only has to contain something. */
 export const broadcastCreateSchema = z.object({
   supplierId: z.uuid("Choose a supplier"),
   contactId: optionalUuid("Choose a valid contact"),
-  channel: z.enum(values(EvidenceChannel), { error: "Choose how it was received" }).default("MANUAL_PASTE"),
+  channel: z.enum(BROADCAST_ENTRY_CHANNELS, { error: "Choose how it was received" }).default("MANUAL_PASTE"),
   /** datetime-local text in the business timezone; converted to a UTC instant by the action. */
   receivedAt: z.string().min(1, "Enter when the message was received"),
   rawText: z
