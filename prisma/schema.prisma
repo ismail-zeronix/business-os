@@ -111,6 +111,13 @@ enum StockStatus {
   UNKNOWN
 }
 
+enum WarrantyType {
+  CARRY_IN
+  ON_SITE
+  NBD
+  RETURN_TO_BASE
+}
+
 // ─────────────────────────────── Identity ───────────────────────────────
 
 /// Fixed roles (docs/decisions/0006-sign-in-and-roles.md). ADMIN also manages users, mailbox connections and brand / category settings.
@@ -473,6 +480,7 @@ model BroadcastItem {
   brandText    String?     @map("brand_text")
   modelText    String?     @map("model_text")
   partNumber   String?     @map("part_number")
+  categoryText String?     @map("category_text")
   specText     String?     @map("spec_text")
   quantity     Int?
   priceAmount  Decimal?    @map("price_amount") @db.Decimal(14, 2)
@@ -480,6 +488,8 @@ model BroadcastItem {
   currencyCode String?     @map("currency_code") @db.Char(3)
   vatState     VatState    @default(UNKNOWN) @map("vat_state")
   stockStatus  StockStatus @default(UNKNOWN) @map("stock_status")
+  warrantyMonths Int?          @map("warranty_months")
+  warrantyType   WarrantyType? @map("warranty_type")
   notes        String?
 
   // Product link + review state.
@@ -519,6 +529,8 @@ model PriceObservation {
   amount       Decimal  @db.Decimal(14, 2)
   currencyCode String   @map("currency_code") @db.Char(3)
   vatState     VatState @default(UNKNOWN) @map("vat_state")
+  warrantyMonths Int?          @map("warranty_months")
+  warrantyType   WarrantyType? @map("warranty_type")
   /// Copied from the evidence at creation (immutable there), denormalised for indexed "latest" queries.
   observedAt   DateTime @map("observed_at") @db.Timestamptz(3)
 
