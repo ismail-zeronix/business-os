@@ -13,6 +13,10 @@ Create broadcast (supplier, optional contact, channel, received-at, raw text)
   -> (mistake?) Reopen -> observations retracted -> fix -> Confirm again
 ```
 
+Reviewing can start with the **Table** view: every PENDING item in one dense editable table (all fields, including category and
+warranty), corrected in bulk with **Apply all**. It only saves field corrections — it never links a product or confirms. The
+per-item Review flow below is unchanged and still required to link products and confirm.
+
 Reviewing can also skip the one-by-one loop: **"Confirm N ready items"** confirms every PENDING item already linked to an
 ACTIVE product in one click (each item still goes through the same Confirm step and precondition checks above, just in a
 loop — see "Confirm preconditions"). Items still needing a product link stay in the individual flow; picking the right
@@ -83,6 +87,14 @@ Pure functions behind `BroadcastParser { name, version, parse(rawText, { brands 
 *Known effect:* the product matcher compares the model exactly, so a product saved earlier as `E16` or `T16 GEN 6` does not auto-link to a new `ThinkPad E16` / `THINKPAD T16 GEN 6` line. The reviewer links it once with "remember this wording" and the alias covers it from then on.
 
 Manual entry is always available ("Add item"), so parser quality never blocks the workflow. An LLM may later implement the same interface as an optional extractor; it would still only propose.
+
+**Parser version 4 (2026-09-23), category and warranty from the real broadcasts already in the database.** Checked against all 13 saved broadcasts (214 items).
+- **Category**, resolved against the live Category master list (like brand): the leading word of the item's text wins outright when it matches a known category word (`LAP`, `MONITOR`, `DESK`/`DESKTOP`, `SERVER`, `WORKSTATION`, plus `NOTEBOOK`, `PRINTER`, `CCTV`, `NAS`/`STORAGE`, `SWITCH`/`ROUTER`/`NETWORKING`) — this is what makes "LAP HP MOBILE WORKSTATION ZBook..." file as Laptop, matching the supplier's own tag, even though "workstation" also appears later in the line. Otherwise the rest of the text is scanned once; more than one distinct category found there is left unresolved rather than guessed.
+- **Warranty duration**: `1YR`, `3YR`, `1Yr`, `2YR`, `1 Year`, `3YEAR`, `3 Year`, `3 YRS` all read as years x 12 months.
+- **Warranty type**, checked in order so the more specific physical descriptor wins when both appear ("Onsite NBD" reads as On-site): On-site (`onsite`, `on-site`), Carry-in (`carry-in`, `carryin`), Return-to-base (`rtb`, `return to base`, `depot`), Next business day (`nbd`, `next business day`). A bare "Warranty" with no duration or recognised type extracts nothing.
+
+## Warranty
+Warranty duration (months) and type live on `BroadcastItem` (reviewer-editable while PENDING) and are copied onto `PriceObservation` at Confirm — a term of that specific priced offer, not of stock. An item with warranty wording but no price creates no `PriceObservation`, so nothing structured is recorded for it (the wording stays visible in the raw evidence and the item's spec text). This is independent of `Supplier.warrantyNotes`, which remains the supplier's general free-text policy.
 
 ## Matching
 After parsing, the matcher runs (`products/matching`): part number, then model (+brand), then alias. A single strong hit pre-links the item and records `match_basis`, but the item stays PENDING. Several hits are shown as candidates and never auto-picked — the reviewer can search, link, or create a product inline (drawer prefilled from the item). **Zero hits** auto-creates a TEMPORARY product from the item's own text (description, or brand + model) and links it (`match_basis` = `NEW_PRODUCT`) instead of waiting for a click — "whatever a supplier pastes is a product." A part-number collision at that instant (e.g. with an archived product) leaves the item unlinked for a person instead of failing the save. Linking (by search, or the drawer) has a "remember this wording as an alias" toggle; the alias stores its source item as provenance.

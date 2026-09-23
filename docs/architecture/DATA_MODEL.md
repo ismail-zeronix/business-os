@@ -397,3 +397,17 @@ Migration `20260921190000_outgoing_email`. Additive: one enum, two tables, one c
 **Guards.** CHECKs: port 1 to 65535, a from address with an `@`, at least one recipient, `error` present exactly when `FAILED`, attachment name, hash and bytes all present or all absent. `guard_sent_email()` refuses any UPDATE or DELETE on `sent_emails`.
 
 **Choices.** The exact PDF is stored with the email, so what a customer received can always be opened again (`/sent-emails/[id]/attachment`). Sending writes one audit row (`quotation.emailed` / `quotation.email_failed`, entity Quotation, scope Customer when there is one), so it appears on the quotation's and the customer's Activity.
+
+## 17. Category and warranty on broadcast items (2026-09-23)
+
+Migration `20260923004256_broadcast_category_warranty`. Additive: one enum (`WarrantyType`: `CARRY_IN`, `ON_SITE`, `NBD`, `RETURN_TO_BASE`), three columns on `broadcast_items` (`category_text`, `warranty_months`, `warranty_type`), two columns on `price_observations` (`warranty_months`, `warranty_type`). Nothing existing altered. Module: `docs/modules/BROADCASTS.md`. Plan: `docs/superpowers/plans/2026-09-23-broadcast-category-warranty-review.md`.
+
+| Item | Notes |
+|---|---|
+| `broadcast_items.category_text` | Free text, mirrors `brand_text`/`model_text` — what the parser read or the reviewer corrected. Not a FK; resolved against the live `Category` table only when a product is created from the item, exactly like `brand_text` resolves to a brand. |
+| `broadcast_items.warranty_months`, `.warranty_type` | Reviewer-editable while PENDING, same lifecycle as price/currency/VAT. |
+| `price_observations.warranty_months`, `.warranty_type` | Copied from the item at confirm time. Warranty is a term of a specific priced offer, so it is not on `stock_observations`; an item with warranty wording but no price creates no price observation and so records nothing structured. |
+
+**Guards.** CHECK `broadcast_items_warranty_months_positive`, `price_observations_warranty_months_positive`: NULL or `> 0`.
+
+**Deliberate choices.** No `UNKNOWN` member on `WarrantyType` (unlike `VatState`/`StockStatus`) — warranty is frequently just absent rather than always applicable, so NULL already means "not stated" without a redundant enum value. `Monitor` was added as a new `Category` row (not a schema change) through the existing `createCategory` service, filling a real gap: 17 of 214 real broadcast items are monitors with no prior matching category.

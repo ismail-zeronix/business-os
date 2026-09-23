@@ -81,7 +81,8 @@ Design v3 (`docs/design/UI_SYSTEM.md` banner): lime primary `#b4e64e`, brand gre
 
 | Table | Extension | When |
 |---|---|---|
-| `PriceObservation` / `StockObservation` | Warranty type, warranty source, verification date; stock status values beyond today's | Broadcast intelligence |
+| `PriceObservation` | Warranty type and duration — **done 2026-09-23** (`docs/architecture/DATA_MODEL.md` §17). Warranty *source* and *verification date* remain out of scope (the existing evidence/`observed_at` already answers "when," and the source is always the broadcast's supplier). | Broadcast intelligence |
+| `StockObservation` | Stock status values beyond today's | Broadcast intelligence |
 | `Supplier` | Discovery state (DISCOVERED to TRUSTED) | Supplier matching |
 | `AuditLog` | `actor_type` (user / agent), already planned in `DATA_MODEL.md` | First agent |
 | `Enquiry` | A real task or follow-up table | Follow-up agent |

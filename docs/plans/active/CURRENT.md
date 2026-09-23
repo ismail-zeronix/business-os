@@ -27,6 +27,16 @@ price/currency or no price/stock now confirms with sensible defaults (currency â
 blocked, since this business runs on a single currency and treats being listed by a supplier as evidence of availability.
 Additive only, no migration. See `docs/modules/BROADCASTS.md`.
 
+## Side addition (2026-09-23): broadcast category, warranty, and a bulk review table
+
+Independent of the Quotation milestone, built from real broadcast data now in the project database: category (resolved
+against the live Category list, including a new "Monitor" category) and warranty (duration + type: Carry-in, On-site, Next
+business day, Return-to-base) are now parsed from broadcast text (parser v4) and recorded through to `PriceObservation` at
+confirm. A new **Table** view on the broadcast page lets a reviewer bulk-correct every PENDING item's fields before
+continuing into the existing per-item product-linking and Confirm flow. The Add Broadcast form gained an optional Category
+hint, applied only to items the parser could not classify. One additive migration; see `docs/modules/BROADCASTS.md` and
+`docs/architecture/DATA_MODEL.md` section 17. Spec: `docs/superpowers/specs/2026-09-23-broadcast-category-warranty-review-design.md`.
+
 ## Purpose
 
 After the buyer has chosen a supplier for each requirement, turn the enquiry into a price the customer can be given.
