@@ -10,6 +10,7 @@ import { toZonedInputValue } from "@/lib/format";
 import { firstParam } from "@/lib/search-params";
 import { BroadcastForm } from "@/modules/broadcasts/components/broadcast-form";
 import { enquiryReference } from "@/modules/enquiries/shared";
+import { listCategoryOptions } from "@/modules/products/master-data.queries";
 import { getRequestForReply } from "@/modules/sourcing/queries";
 import { listContactOptions, listSupplierOptions } from "@/modules/suppliers/queries";
 
@@ -18,7 +19,7 @@ export const metadata: Metadata = { title: "New broadcast" };
 export default async function NewBroadcastPage(props: PageProps<"/broadcasts/new">) {
   await requireActor();
   const searchParams = await props.searchParams;
-  const [suppliers, contacts] = await Promise.all([listSupplierOptions(), listContactOptions()]);
+  const [suppliers, contacts, categoryOptions] = await Promise.all([listSupplierOptions(), listContactOptions(), listCategoryOptions()]);
 
   // `?request=` marks this message as the reply to a sourcing request: the supplier is that request's supplier.
   const requestParam = firstParam(searchParams, "request");
@@ -52,7 +53,7 @@ export default async function NewBroadcastPage(props: PageProps<"/broadcasts/new
         />
       ) : (
         <Panel className="max-w-4xl p-6">
-          <BroadcastForm suppliers={suppliers} contacts={contacts} defaultSupplierId={defaultSupplierId} defaultReceivedAt={toZonedInputValue(new Date())} request={request} />
+          <BroadcastForm suppliers={suppliers} contacts={contacts} categoryOptions={categoryOptions} defaultSupplierId={defaultSupplierId} defaultReceivedAt={toZonedInputValue(new Date())} request={request} />
         </Panel>
       )}
     </PageBody>

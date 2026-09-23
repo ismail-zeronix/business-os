@@ -31,12 +31,14 @@ type SupplierOption = SelectOption & { legalName?: string | null };
 export function BroadcastForm({
   suppliers,
   contacts,
+  categoryOptions,
   defaultSupplierId,
   defaultReceivedAt,
   request,
 }: {
   suppliers: SupplierOption[];
   contacts: ContactOption[];
+  categoryOptions: SelectOption[];
   defaultSupplierId: string | null;
   defaultReceivedAt: string;
   /** When set, this message is the reply to a sourcing request and is linked to it on save. */
@@ -144,6 +146,9 @@ export function BroadcastForm({
         </Field>
         <Field label="Received at (Dubai time)" htmlFor="bf-receivedAt" required error={err("receivedAt")} hint="When the supplier sent it. Freshness is measured from this time.">
           <Input id="bf-receivedAt" name="receivedAt" type="datetime-local" defaultValue={fieldValue(state, "receivedAt", defaultReceivedAt)} aria-invalid={Boolean(err("receivedAt"))} />
+        </Field>
+        <Field label="Category (optional)" htmlFor="bf-category" error={err("categoryId")} hint="Only applied to items the parser can't classify from the text itself.">
+          <Combobox id="bf-category" name="categoryId" options={categoryOptions} defaultValue={fieldValue(state, "categoryId", null)} placeholder="No hint" clearable />
         </Field>
       </div>
 
