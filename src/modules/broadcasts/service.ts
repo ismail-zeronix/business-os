@@ -31,7 +31,7 @@ export class DuplicateBroadcastError extends ConflictError {
   }
 }
 
-const ITEM_FIELDS = ["description", "brandText", "modelText", "partNumber", "specText", "quantity", "priceAmount", "currencyCode", "vatState", "stockStatus", "notes"] as const;
+const ITEM_FIELDS = ["description", "brandText", "modelText", "partNumber", "categoryText", "specText", "quantity", "priceAmount", "currencyCode", "vatState", "stockStatus", "warrantyMonths", "warrantyType", "notes"] as const;
 const broadcastScope = (broadcastId: string) => ({ type: "Broadcast" as const, id: broadcastId });
 
 const PRODUCT_NAME_MAX = 250; // productCreateSchema's `name` cap (products/schemas.ts); an item's description allows up to 300.
@@ -77,6 +77,8 @@ export async function createBroadcast(
     allowDuplicate: boolean;
     /** Set when this message is the supplier's reply to a sourcing request (the request becomes REPLIED in the same transaction). */
     supplierRequestId: string | null;
+    /** Optional fallback category: applied only to items the parser could not classify from the text itself. */
+    categoryHintId: string | null;
   },
 ) {
   return inTransaction(ctx, async (c) => {
@@ -107,7 +109,13 @@ export async function createBroadcast(
 
     // Propose items deterministically, then pre-link a product only when exactly one strong match exists. Everything stays PENDING.
     const brandNames = (await c.db.brand.findMany({ where: { status: { not: "ARCHIVED" } }, select: { name: true } })).map((b) => b.name);
-    const parsed = rulesParser.parse(input.rawText, { brands: brandNames });
+    const categoryRows = await c.db.category.findMany({ where: { status: { not: "ARCHIVED" } }, select: { id: true, name: true } });
+    const categoryNames = categoryRows.map((cat) => cat.name);
+    const hintCategoryName = input.categoryHintId ? (categoryRows.find((cat) => cat.id === input.categoryHintId)?.name ?? null) : null;
+    const parsed = rulesParser.parse(input.rawText, { brands: brandNames, categories: categoryNames }).map((item) => ({
+      ...item,
+      categoryText: item.categoryText ?? hintCategoryName, // the hint only fills what the parser could not read itself
+    }));
     let autoCreatedProducts = 0;
     for (const item of parsed) {
       const candidates = await findMatchCandidates(c.db, { partNumber: item.partNumber, model: item.modelText, brandText: item.brandText, description: item.description });
@@ -129,12 +137,15 @@ export async function createBroadcast(
         brandText: fields.brandText,
         modelText: fields.modelText,
         partNumber: fields.partNumber,
+        categoryText: fields.categoryText,
         specText: fields.specText,
         quantity: fields.quantity,
         priceAmount: fields.priceAmount,
         currencyCode: fields.currencyCode,
         vatState: fields.vatState,
         stockStatus: fields.stockStatus,
+        warrantyMonths: fields.warrantyMonths,
+        warrantyType: fields.warrantyType,
       };
       await c.db.broadcastItem.create({
         data: {
@@ -382,7 +393,7 @@ export async function confirmItem(ctx: ServiceContext, itemId: string) {
 
     const recorded: string[] = [];
     if (hasPrice && item.priceAmount && currencyCode) {
-      await createPriceObservation(c, { ...base, amount: item.priceAmount.toString(), currencyCode, vatState: item.vatState });
+      await createPriceObservation(c, { ...base, amount: item.priceAmount.toString(), currencyCode, vatState: item.vatState, warrantyMonths: item.warrantyMonths, warrantyType: item.warrantyType });
       recorded.push(formatMoney(item.priceAmount, currencyCode));
     }
     if (hasStock) {

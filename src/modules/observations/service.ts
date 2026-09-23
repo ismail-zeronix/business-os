@@ -1,6 +1,6 @@
 import { ValidationError } from "../../core/errors";
 import type { ServiceContext } from "../../core/database/tx";
-import type { StockStatus, VatState } from "../../generated/prisma/enums";
+import type { StockStatus, VatState, WarrantyType } from "../../generated/prisma/enums";
 import { writeAudit } from "../audit/service";
 import type { AuditScope } from "../audit/types";
 
@@ -19,7 +19,7 @@ type Provenance = {
   scope?: AuditScope;
 };
 
-export async function createPriceObservation(ctx: ServiceContext, input: Provenance & { amount: string; currencyCode: string; vatState: VatState }) {
+export async function createPriceObservation(ctx: ServiceContext, input: Provenance & { amount: string; currencyCode: string; vatState: VatState; warrantyMonths?: number | null; warrantyType?: WarrantyType | null }) {
   if (!/^\d+(?:\.\d{1,2})?$/.test(input.amount)) throw new ValidationError("The price must be a non-negative amount.");
   if (!/^[A-Z]{3}$/.test(input.currencyCode)) throw new ValidationError("A price needs a currency (for example AED).");
 
@@ -31,6 +31,8 @@ export async function createPriceObservation(ctx: ServiceContext, input: Provena
       amount: input.amount,
       currencyCode: input.currencyCode,
       vatState: input.vatState,
+      warrantyMonths: input.warrantyMonths ?? null,
+      warrantyType: input.warrantyType ?? null,
       observedAt: input.observedAt,
       evidenceSourceId: input.evidenceSourceId,
       broadcastItemId: input.broadcastItemId,

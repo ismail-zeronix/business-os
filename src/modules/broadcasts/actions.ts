@@ -58,6 +58,7 @@ export async function createBroadcastAction(_prev: IdResult | null, formData: Fo
         notes: input.notes,
         allowDuplicate: input.allowDuplicate,
         supplierRequestId: input.supplierRequestId,
+        categoryHintId: input.categoryId,
       });
       revalidatePath("/broadcasts");
       revalidatePath(`/suppliers/${input.supplierId}`);
