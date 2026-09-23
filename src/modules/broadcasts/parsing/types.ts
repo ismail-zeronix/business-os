@@ -1,4 +1,4 @@
-import type { ExtractionConfidence, StockStatus, VatState } from "../../../generated/prisma/enums";
+import type { ExtractionConfidence, StockStatus, VatState, WarrantyType } from "../../../generated/prisma/enums";
 
 /**
  * One product line proposed by a parser. Everything here is a PROPOSAL for a human to review; nothing is truth until confirmed.
@@ -25,6 +25,9 @@ export type ParsedItem = {
   currencyCode: string | null;
   vatState: VatState;
   stockStatus: StockStatus;
+  categoryText: string | null;
+  warrantyMonths: number | null;
+  warrantyType: WarrantyType | null;
   /** Why the parser decided what it did, plus hints that have no typed column yet (e.g. market). Stored write-once. */
   extractedData: {
     parser: string;
@@ -37,6 +40,8 @@ export type ParsedItem = {
 export type ParseContext = {
   /** Brand names from the Brand master list (e.g. "Dell", "HP"). Only these are recognised as brands. */
   brands: string[];
+  /** Category names from the Category master list (e.g. "Laptop", "Monitor"). Only these are recognised as categories. */
+  categories: string[];
 };
 
 /**

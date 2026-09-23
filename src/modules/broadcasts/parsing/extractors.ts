@@ -178,6 +178,84 @@ export function findBrand(text: string, brands: readonly string[]): { name: stri
 }
 
 /**
+ * Keyword -> canonical category name (must match a live Category.normalizedName, resolved by the caller — same principle as
+ * findBrand: this list only ever PROPOSES a name, it never invents a category that doesn't exist in the master list).
+ */
+const CATEGORY_KEYWORDS: { pattern: RegExp; name: string }[] = [
+  { pattern: /\b(?:lap|laptop|notebook)\b/i, name: "laptop" },
+  { pattern: /\bmonitor\b/i, name: "monitor" },
+  { pattern: /\bdesk(?:top)?\b/i, name: "desktop" },
+  { pattern: /\bserver\b/i, name: "server" },
+  { pattern: /\bworkstation\b/i, name: "workstation" },
+  { pattern: /\bprinter\b/i, name: "printer" },
+  { pattern: /\bcctv\b/i, name: "cctv" },
+  { pattern: /\b(?:nas|storage)\b/i, name: "storage" },
+  { pattern: /\b(?:switch|router|networking)\b/i, name: "networking" },
+];
+
+/**
+ * Category, resolved against the live Category master list. The leading word of the text (the supplier's own tag, e.g. "LAP
+ * HP MOBILE WORKSTATION...") wins outright over any category word appearing later in the same text — that's what makes a
+ * laptop workstation file as Laptop, matching the supplier's own classification. If the leading word doesn't match and more
+ * than one distinct category matches elsewhere in the text, nothing is proposed (never guess between two real candidates).
+ */
+export function findCategory(text: string, categories: readonly string[]): { name: string; span: Span; reason: string } | null {
+  const normalized = new Set(categories.map((c) => c.toLowerCase()));
+  const resolve = (keyword: string): string | null => categories.find((c) => c.toLowerCase() === keyword) ?? null;
+
+  // The leading word is the supplier's own tag ("LAP HP MOBILE WORKSTATION...") and wins outright over any category word
+  // appearing later in the same text — checking the word alone (not a prefix-anchored pattern) keeps this identical to the
+  // full-text scan below, just restricted to one token.
+  const leading = /^\s*([A-Za-z]+)\b/.exec(text);
+  if (leading && leading[1]) {
+    const word = leading[1];
+    const hit = CATEGORY_KEYWORDS.find((k) => k.pattern.test(word) && normalized.has(k.name));
+    if (hit) {
+      const name = resolve(hit.name);
+      if (name) return { name, span: [leading.index, leading.index + word.length], reason: `category "${word}" (leading word in the text)` };
+    }
+  }
+
+  const hits = CATEGORY_KEYWORDS.filter((k) => k.pattern.test(text) && normalized.has(k.name));
+  const distinct = [...new Set(hits.map((h) => h.name))];
+  if (distinct.length !== 1) return null; // none found, or genuinely ambiguous: never guess
+  const only = hits.find((h) => h.name === distinct[0]);
+  if (!only) return null;
+  const match = only.pattern.exec(text);
+  if (!match) return null;
+  const name = resolve(distinct[0] as string);
+  if (!name) return null;
+  return { name, span: [match.index, match.index + match[0].length], reason: `category "${match[0]}" (matched in the text)` };
+}
+
+const WARRANTY_DURATION = /\b(\d{1,2})\s*-?\s*(?:YRS?|YEARS?)\b/i;
+const WARRANTY_TYPE_RULES: { pattern: RegExp; type: "ON_SITE" | "CARRY_IN" | "RETURN_TO_BASE" | "NBD" }[] = [
+  { pattern: /on[-\s]?site/i, type: "ON_SITE" },
+  { pattern: /carry[-\s]?in/i, type: "CARRY_IN" },
+  { pattern: /\brtb\b|return[-\s]?to[-\s]?base|\bdepot\b/i, type: "RETURN_TO_BASE" },
+  { pattern: /\bnbd\b|next\s*business\s*day/i, type: "NBD" },
+];
+
+/**
+ * Warranty duration ("1YR", "3YR", "1Yr", "2YR", "1 Year", "3YEAR", "3 Year", "3 YRS" -> months) and type (checked in the
+ * order above, so "Onsite NBD" reads as ON_SITE — the more specific physical descriptor — while a bare "NBD" alone reads as
+ * NBD). A bare "Warranty" with neither a duration nor a recognised type extracts nothing: the word stays in the spec text,
+ * but nothing is guessed.
+ */
+export function findWarranty(text: string): { months: number | null; monthsReason: string | null; type: "ON_SITE" | "CARRY_IN" | "RETURN_TO_BASE" | "NBD" | null; typeReason: string | null } {
+  const durationMatch = WARRANTY_DURATION.exec(text);
+  const years = durationMatch?.[1] ? Number(durationMatch[1]) : null;
+  const months = years && years > 0 ? years * 12 : null;
+  const monthsReason = months ? `warranty "${durationMatch![0].trim()}" (${years} year${years === 1 ? "" : "s"})` : null;
+
+  const typeHit = WARRANTY_TYPE_RULES.find((rule) => rule.pattern.test(text));
+  const type = typeHit?.type ?? null;
+  const typeReason = typeHit ? `warranty type "${typeHit.pattern.exec(text)?.[0]}" (${typeHit.type})` : null;
+
+  return { months, monthsReason, type, typeReason };
+}
+
+/**
  * Letters-and-digits tokens that are specs, not part numbers: a screen resolution (1920x1200), an IEEE standard (802.11be), a memory layout
  * (2x16GB), a Lenovo series name with its size ("THINKBOOK14-G8", "THINKBOOK-16"), or any number with a unit (400nits, 5.4GHz, 140W, 90Wh, 13TOPS).
  */

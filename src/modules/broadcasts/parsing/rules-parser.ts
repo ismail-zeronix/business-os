@@ -1,5 +1,5 @@
 import type { ExtractionConfidence } from "../../../generated/prisma/enums";
-import { findBarePrice, findBrand, findExtras, findMarket, findPartNumber, findPrice, findQuantity, findSpecs, findStockStatus, findTrailingPrice, findVat, type Span } from "./extractors";
+import { findBarePrice, findBrand, findCategory, findExtras, findMarket, findPartNumber, findPrice, findQuantity, findSpecs, findStockStatus, findTrailingPrice, findVat, findWarranty, type Span } from "./extractors";
 import { HEADER_LINE } from "./header-lines";
 import { toBlocks, toLines, type Line } from "./text";
 import type { BroadcastParser, ParsedItem, ParseContext } from "./types";
@@ -10,7 +10,7 @@ import type { BroadcastParser, ParsedItem, ParseContext } from "./types";
  * Deliberately imperfect: reviewers correct it and can add items by hand, so parsing quality never blocks the workflow.
  */
 const PARSER_NAME = "rules";
-const PARSER_VERSION = "3"; // 3 (2026-09-21): Lenovo series names kept in the model, "512SSD", curly inch marks, Ultra CPUs, keyboard / bag hints. 2: split prices re-attached, "|" ends the name, resolutions / 802.11 not part numbers, "AI-Ready" is not stock
+const PARSER_VERSION = "4"; // 4 (2026-09-23): category (leading-word + keyword match against the live Category list) and warranty (duration + type) from the real broadcasts already in the database. 3: Lenovo series names kept in the model, "512SSD", curly inch marks, Ultra CPUs, keyboard / bag hints. 2: split prices re-attached, "|" ends the name, resolutions / 802.11 not part numbers, "AI-Ready" is not stock
 
 const inSpan = (index: number, spans: readonly Span[]) => spans.some((s) => index >= s[0] && index < s[1]);
 
@@ -88,7 +88,7 @@ const collapseRepeats = (text: string) =>
     .filter((word, index, all) => index === 0 || word.toLowerCase() !== (all[index - 1] as string).toLowerCase())
     .join(" ");
 
-function buildItem(lines: Line[], brands: readonly string[], contextBrand: string | null): Omit<ParsedItem, "position"> | null {
+function buildItem(lines: Line[], brands: readonly string[], categories: readonly string[], contextBrand: string | null): Omit<ParsedItem, "position"> | null {
   // Title + detail that names the brand itself: read the detail line (the title adds nothing). Without a brand on the detail line the title is kept.
   const detailOnly = lines.length > 1 && isTitleOf(lines[0] as Line, lines[1] as Line, brands) && findBrand((lines[1] as Line).clean, brands) !== null;
   const flat = (detailOnly ? lines.slice(1) : lines).map((l) => l.clean).join(" ");
@@ -113,6 +113,13 @@ function buildItem(lines: Line[], brands: readonly string[], contextBrand: strin
   const brandText = foundBrand?.name ?? contextBrand;
   if (foundBrand) reasons.push(`brand "${foundBrand.name}" (from the brand list)`);
   else if (contextBrand) reasons.push(`brand "${contextBrand}" (from a heading above)`);
+
+  const foundCategory = findCategory(flat, categories);
+  if (foundCategory) reasons.push(foundCategory.reason);
+
+  const warranty = findWarranty(flat);
+  if (warranty.monthsReason) reasons.push(warranty.monthsReason);
+  if (warranty.typeReason) reasons.push(warranty.typeReason);
 
   const explained: Span[] = [
     ...(price && !price.bare ? [price.span] : []),
@@ -168,6 +175,9 @@ function buildItem(lines: Line[], brands: readonly string[], contextBrand: strin
     currencyCode: price?.currency ?? null, // only when written; never assumed
     vatState: vat.state,
     stockStatus: stock?.status ?? "UNKNOWN",
+    categoryText: foundCategory?.name ?? null,
+    warrantyMonths: warranty.months,
+    warrantyType: warranty.type,
     extractedData: { parser: PARSER_NAME, version: PARSER_VERSION, reasons, hints },
   };
 }
@@ -178,7 +188,7 @@ function headingBrand(line: Line, brands: readonly string[]): string | null {
   return findBrand(line.clean, brands)?.name ?? null;
 }
 
-function itemsFromBlock(block: Line[], brands: readonly string[]): Omit<ParsedItem, "position">[] {
+function itemsFromBlock(block: Line[], brands: readonly string[], categories: readonly string[]): Omit<ParsedItem, "position">[] {
   // Title lines belong to the detail line that follows them: they never start an item of their own.
   const titles = new Set(block.flatMap((line, i) => (i + 1 < block.length && isTitleOf(line, block[i + 1] as Line, brands) ? [i] : [])));
   const likeIndexes = block.map((line, i) => (!titles.has(i) && isItemLike(line.clean, brands) ? i : -1)).filter((i) => i >= 0);
@@ -186,7 +196,7 @@ function itemsFromBlock(block: Line[], brands: readonly string[]): Omit<ParsedIt
 
   // Zero or one product-like line: the whole block is one item (e.g. the six-line "Dell 5440 / i7 16/512 / DOS / 25pc ready / 2450+ / UAE").
   if (likeIndexes.length < 2) {
-    const item = buildItem(block, brands, null);
+    const item = buildItem(block, brands, categories, null);
     return item ? [item] : [];
   }
 
@@ -198,7 +208,7 @@ function itemsFromBlock(block: Line[], brands: readonly string[]): Omit<ParsedIt
   likeIndexes.forEach((likeIndex, k) => {
     const next = likeIndexes[k + 1];
     const endIndex = (next === undefined ? block.length : startOf(next)) - 1;
-    const item = buildItem(block.slice(startOf(likeIndex), endIndex + 1), brands, contextBrand);
+    const item = buildItem(block.slice(startOf(likeIndex), endIndex + 1), brands, categories, contextBrand);
     if (item) items.push(item);
   });
   return items;
@@ -241,7 +251,7 @@ export const rulesParser: BroadcastParser = {
   parse(rawText: string, context: ParseContext): ParsedItem[] {
     // "SUPPLIER : ..." / "CONTACT : ..." lines say who sent it, not what is for sale: they are read as blank lines (line numbers stay).
     const lines = toLines(rawText).map((line) => (HEADER_LINE.test(line.clean) ? { ...line, clean: "" } : line));
-    const items = attachSplitPrices(toBlocks(lines).flatMap((block) => itemsFromBlock(block, context.brands)), lines);
+    const items = attachSplitPrices(toBlocks(lines).flatMap((block) => itemsFromBlock(block, context.brands, context.categories)), lines);
     return items.map((item, index) => ({ ...item, position: index + 1 }));
   },
 };
