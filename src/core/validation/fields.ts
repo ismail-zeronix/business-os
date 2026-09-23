@@ -79,6 +79,12 @@ export const optionalQuantity = () =>
     .preprocess(blankToNull, z.coerce.number({ error: "Enter a whole number" }).int("Enter a whole number").min(0, "Cannot be negative").nullable().optional())
     .transform((value) => value ?? null);
 
+/** Optional positive whole number (e.g. warranty months). Blank => null. Zero and negative are rejected. */
+export const optionalPositiveInt = (label: string, max = 999) =>
+  z
+    .preprocess(blankToNull, z.coerce.number({ error: `Enter a whole number` }).int(`Enter a whole number`).min(1, `${label} must be at least 1`).max(max, `${label} is too large`).nullable().optional())
+    .transform((value) => value ?? null);
+
 /** ISO currency code from an allow-list (extend deliberately). */
 export const SUPPORTED_CURRENCIES = ["AED", "USD", "EUR", "GBP", "SAR", "INR", "CNY"] as const;
 export type CurrencyCode = (typeof SUPPORTED_CURRENCIES)[number];
