@@ -46,3 +46,6 @@ next-env.d.ts
 
 # database backups (contain real business data)
 /backups/
+
+# superpowers scratch workspace (per-plan ledgers/review packages)
+/.superpowers/
