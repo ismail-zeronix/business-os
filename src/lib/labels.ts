@@ -18,6 +18,7 @@ import type {
   SupplierType,
   UserRole,
   VatState,
+  WarrantyType,
 } from "../generated/prisma/enums";
 
 /** Human labels for enums: one place, so wording never drifts between screens (docs/design/UI_SYSTEM.md section 6). Pure, client-safe. */
@@ -70,6 +71,12 @@ export const STOCK_STATUS_LABEL: Record<StockStatus, string> = {
   ON_REQUEST: "On request",
   OUT_OF_STOCK: "Out of stock",
   UNKNOWN: "Unknown",
+};
+export const WARRANTY_TYPE_LABEL: Record<WarrantyType, string> = {
+  CARRY_IN: "Carry-in",
+  ON_SITE: "On-site",
+  NBD: "Next business day",
+  RETURN_TO_BASE: "Return to base",
 };
 
 export const VAT_STATE_LABEL: Record<VatState, string> = {

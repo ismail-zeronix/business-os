@@ -43,6 +43,7 @@ export function ItemRow({
   const reasons = ((item.extractedData as { reasons?: string[] } | null)?.reasons ?? []).filter(Boolean);
   const wording = item.description || [item.brandText, item.modelText].filter(Boolean).join(" ");
   const brandId = item.brandText ? (brandOptions.find((b) => normalizeName(b.label) === normalizeName(item.brandText ?? ""))?.value ?? null) : null;
+  const categoryId = item.categoryText ? (categoryOptions.find((c) => normalizeName(c.label) === normalizeName(item.categoryText ?? ""))?.value ?? null) : null;
   const price = item.priceAmount && item.currencyCode ? formatMoney(item.priceAmount, item.currencyCode) : item.priceAmount ? `${item.priceAmount.toString()} (no currency)` : null;
   const quantity = formatQuantity(item.quantity);
 
@@ -79,7 +80,7 @@ export function ItemRow({
                 candidateSpecs={candidateSpecs}
                 currentSpecText={item.specText}
                 aliasWording={wording}
-                createDefaults={{ name: wording, description: item.specText?.trim() || null, brandId, family: "", model: item.modelText ?? "", partNumber: item.partNumber ?? "" }}
+                createDefaults={{ name: wording, description: item.specText?.trim() || null, brandId, categoryId, family: "", model: item.modelText ?? "", partNumber: item.partNumber ?? "" }}
                 brandOptions={brandOptions}
                 categoryOptions={categoryOptions}
               />
@@ -93,12 +94,15 @@ export function ItemRow({
                   brandText: item.brandText,
                   modelText: item.modelText,
                   partNumber: item.partNumber,
+                  categoryText: item.categoryText,
                   specText: item.specText,
                   quantity: item.quantity,
                   priceAmount: item.priceAmount?.toString() ?? null,
                   currencyCode: item.currencyCode,
                   vatState: item.vatState,
                   stockStatus: item.stockStatus,
+                  warrantyMonths: item.warrantyMonths,
+                  warrantyType: item.warrantyType,
                   notes: item.notes,
                 }}
               />

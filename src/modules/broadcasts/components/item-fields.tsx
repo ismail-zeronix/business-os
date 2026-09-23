@@ -7,13 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/core/validation/action-result";
 import { SUPPORTED_CURRENCIES } from "@/core/validation/fields";
-import { STOCK_STATUS_LABEL, VAT_STATE_LABEL, toOptions } from "@/lib/labels";
+import { STOCK_STATUS_LABEL, VAT_STATE_LABEL, WARRANTY_TYPE_LABEL, toOptions } from "@/lib/labels";
 
 export type ItemFieldValues = {
   description: string | null;
   brandText: string | null;
   modelText: string | null;
   partNumber: string | null;
+  categoryText: string | null;
   specText: string | null;
   quantity: number | null;
   /** Decimal as text, e.g. "2450" or "2450.5". */
@@ -21,6 +22,8 @@ export type ItemFieldValues = {
   currencyCode: string | null;
   vatState: string;
   stockStatus: string;
+  warrantyMonths: number | null;
+  warrantyType: string | null;
   notes: string | null;
 };
 
@@ -29,12 +32,15 @@ export const EMPTY_ITEM: ItemFieldValues = {
   brandText: null,
   modelText: null,
   partNumber: null,
+  categoryText: null,
   specText: null,
   quantity: null,
   priceAmount: null,
   currencyCode: null,
   vatState: "UNKNOWN",
   stockStatus: "UNKNOWN",
+  warrantyMonths: null,
+  warrantyType: null,
   notes: null,
 };
 
@@ -60,13 +66,16 @@ export function ItemFieldsGrid({ idPrefix, initial, state }: { idPrefix: string;
       <Field label="Description" htmlFor={id("description")} error={err("description")} className="col-span-12">
         <Input id={id("description")} name="description" defaultValue={text("description")} />
       </Field>
-      <Field label="Brand" htmlFor={id("brandText")} error={err("brandText")} className="col-span-4">
+      <Field label="Brand" htmlFor={id("brandText")} error={err("brandText")} className="col-span-3">
         <Input id={id("brandText")} name="brandText" defaultValue={text("brandText")} />
       </Field>
-      <Field label="Model" htmlFor={id("modelText")} error={err("modelText")} className="col-span-4">
+      <Field label="Model" htmlFor={id("modelText")} error={err("modelText")} className="col-span-3">
         <Input id={id("modelText")} name="modelText" defaultValue={text("modelText")} />
       </Field>
-      <Field label="Part number" htmlFor={id("partNumber")} error={err("partNumber")} className="col-span-4">
+      <Field label="Category" htmlFor={id("categoryText")} error={err("categoryText")} className="col-span-3">
+        <Input id={id("categoryText")} name="categoryText" defaultValue={text("categoryText")} />
+      </Field>
+      <Field label="Part number" htmlFor={id("partNumber")} error={err("partNumber")} className="col-span-3">
         <Input id={id("partNumber")} name="partNumber" defaultValue={text("partNumber")} className="font-mono" />
       </Field>
       <Field label="Specification" htmlFor={id("specText")} error={err("specText")} className="col-span-12">
@@ -90,7 +99,7 @@ export function ItemFieldsGrid({ idPrefix, initial, state }: { idPrefix: string;
       <Field label="VAT" htmlFor={id("vatState")} error={err("vatState")} className="col-span-3">
         <SelectField id={id("vatState")} name="vatState" allowNone={false} options={toOptions(VAT_STATE_LABEL, ["UNKNOWN", "EXCLUDED", "INCLUDED"])} defaultValue={fieldValue(state, "vatState", initial.vatState) || "UNKNOWN"} />
       </Field>
-      <Field label="Stock status" htmlFor={id("stockStatus")} error={err("stockStatus")} className="col-span-4">
+      <Field label="Stock status" htmlFor={id("stockStatus")} error={err("stockStatus")} className="col-span-3">
         <SelectField
           id={id("stockStatus")}
           name="stockStatus"
@@ -99,7 +108,13 @@ export function ItemFieldsGrid({ idPrefix, initial, state }: { idPrefix: string;
           defaultValue={fieldValue(state, "stockStatus", initial.stockStatus) || "UNKNOWN"}
         />
       </Field>
-      <Field label="Reviewer notes" htmlFor={id("notes")} error={err("notes")} className="col-span-8">
+      <Field label="Warranty (months)" htmlFor={id("warrantyMonths")} error={err("warrantyMonths")} className="col-span-2">
+        <Input id={id("warrantyMonths")} name="warrantyMonths" inputMode="numeric" defaultValue={text("warrantyMonths")} className="num" />
+      </Field>
+      <Field label="Warranty type" htmlFor={id("warrantyType")} error={err("warrantyType")} className="col-span-3">
+        <SelectField id={id("warrantyType")} name="warrantyType" noneLabel="Not set" options={toOptions(WARRANTY_TYPE_LABEL)} defaultValue={fieldValue(state, "warrantyType", initial.warrantyType)} />
+      </Field>
+      <Field label="Reviewer notes" htmlFor={id("notes")} error={err("notes")} className="col-span-4">
         <Textarea id={id("notes")} name="notes" rows={1} defaultValue={text("notes")} className="min-h-8" />
       </Field>
     </div>

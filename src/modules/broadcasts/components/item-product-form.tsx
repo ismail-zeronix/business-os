@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createProductForItemAction, linkItemAction } from "../actions";
 
-export type ProductDefaults = { name: string; description: string | null; brandId: string | null; family: string; model: string; partNumber: string };
+export type ProductDefaults = { name: string; description: string | null; brandId: string | null; categoryId: string | null; family: string; model: string; partNumber: string };
 
 /**
  * Creates a TEMPORARY product from a broadcast item and links it, without leaving the review. Prefilled from what the item says;
@@ -57,7 +57,7 @@ export function ItemProductForm({
             <SelectField id="ipf-brand" name="brandId" defaultValue={fieldValue(state, "brandId", defaults.brandId) || null} options={brandOptions} />
           </Field>
           <Field label="Category" htmlFor="ipf-category" error={err("categoryId")}>
-            <SelectField id="ipf-category" name="categoryId" defaultValue={fieldValue(state, "categoryId", null) || null} options={categoryOptions} />
+            <SelectField id="ipf-category" name="categoryId" defaultValue={fieldValue(state, "categoryId", defaults.categoryId) || null} options={categoryOptions} />
           </Field>
           <Field label="Family" htmlFor="ipf-family" error={err("family")}>
             <Input id="ipf-family" name="family" defaultValue={fieldValue(state, "family", defaults.family)} />
