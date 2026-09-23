@@ -205,7 +205,7 @@ export async function updateItem(ctx: ServiceContext, input: ItemUpdateInput) {
   });
 }
 
-const BULK_ROW_KEYS = ["id", "description", "brandText", "modelText", "categoryText", "partNumber", "specText", "quantity", "priceAmount", "currencyCode", "vatState", "stockStatus", "warrantyMonths", "warrantyType", "notes"] as const;
+type BulkRowKey = "id" | "description" | "brandText" | "modelText" | "categoryText" | "partNumber" | "specText" | "quantity" | "priceAmount" | "currencyCode" | "vatState" | "stockStatus" | "warrantyMonths" | "warrantyType" | "notes";
 
 /**
  * The bulk review table's "Apply all": saves corrected values onto every changed PENDING item in one transaction, reusing
@@ -214,7 +214,7 @@ const BULK_ROW_KEYS = ["id", "description", "brandText", "modelText", "categoryT
  * existing per-item flow. An item no longer PENDING when this runs (someone else confirmed it in the meantime) is skipped,
  * not failed, so one stale row never blocks the rest.
  */
-export async function bulkUpdateItems(ctx: ServiceContext, input: { broadcastId: string; rows: Record<(typeof BULK_ROW_KEYS)[number], string>[] }) {
+export async function bulkUpdateItems(ctx: ServiceContext, input: { broadcastId: string; rows: Record<BulkRowKey, string>[] }) {
   return inTransaction(ctx, async (c) => {
     const broadcast = await c.db.broadcast.findUnique({ where: { id: input.broadcastId }, select: { id: true } });
     if (!broadcast) throw new NotFoundError("Broadcast");

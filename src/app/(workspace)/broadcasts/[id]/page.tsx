@@ -19,6 +19,7 @@ import { buildHref, firstParam } from "@/lib/search-params";
 import { cn } from "@/lib/utils";
 import { listActivity } from "@/modules/audit/queries";
 import { AddItemForm } from "@/modules/broadcasts/components/add-item-form";
+import { BulkReviewTable } from "@/modules/broadcasts/components/bulk-review-table";
 import { ArchiveBroadcastControl, ConfirmReadyControl } from "@/modules/broadcasts/components/item-controls";
 import { ItemRow } from "@/modules/broadcasts/components/item-row";
 import { RawPane, type LineRange } from "@/modules/broadcasts/components/raw-pane";
@@ -47,7 +48,9 @@ export default async function BroadcastReviewPage(props: PageProps<"/broadcasts/
   const broadcast = await getBroadcast(id);
   if (!broadcast) notFound();
 
-  const view = firstParam(searchParams, "view") === "activity" ? "activity" : "review";
+  const requestedView = firstParam(searchParams, "view");
+  const allUntouched = broadcast.items.length > 1 && broadcast.items.every((i) => i.reviewStatus === "PENDING");
+  const view: "review" | "activity" | "table" = requestedView === "activity" ? "activity" : requestedView === "table" ? "table" : requestedView === "review" ? "review" : allUntouched ? "table" : "review";
   const requestedFilter = firstParam(searchParams, "filter");
   const filter: Filter = (FILTERS as readonly string[]).includes(requestedFilter ?? "") ? (requestedFilter as Filter) : "all";
 
@@ -148,6 +151,7 @@ export default async function BroadcastReviewPage(props: PageProps<"/broadcasts/
         param="view"
         active={view}
         tabs={[
+          { key: "table", label: "Table" },
           { key: "review", label: "Review" },
           { key: "activity", label: "Activity" },
         ]}
@@ -155,6 +159,35 @@ export default async function BroadcastReviewPage(props: PageProps<"/broadcasts/
       <PageBody>
         {view === "activity" ? (
           <Timeline rows={await listActivity({ type: "Broadcast", id })} emptyTitle="No activity recorded yet" />
+        ) : view === "table" ? (
+          items.filter((i) => i.reviewStatus === "PENDING").length === 0 ? (
+            <Panel>
+              <EmptyState title="Nothing pending" description="Every item has already been reviewed. Switch to Review to link products or Activity to see history." />
+            </Panel>
+          ) : (
+            <BulkReviewTable
+              broadcastId={id}
+              rows={items
+                .filter((i) => i.reviewStatus === "PENDING")
+                .map((i) => ({
+                  id: i.id,
+                  description: i.description,
+                  categoryText: i.categoryText,
+                  brandText: i.brandText,
+                  modelText: i.modelText,
+                  partNumber: i.partNumber,
+                  specText: i.specText,
+                  quantity: i.quantity,
+                  priceAmount: i.priceAmount?.toString() ?? null,
+                  currencyCode: i.currencyCode,
+                  vatState: i.vatState,
+                  stockStatus: i.stockStatus,
+                  warrantyMonths: i.warrantyMonths,
+                  warrantyType: i.warrantyType,
+                  notes: i.notes,
+                }))}
+            />
+          )
         ) : (
           <>
           {allReviewed ? (
