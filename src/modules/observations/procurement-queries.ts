@@ -190,7 +190,7 @@ export async function getObservationEvidence(observationId: string) {
   return {
     kind: price ? ("price" as const) : ("stock" as const),
     id: found.id,
-    price: price ? { amount: price.amount.toString(), currencyCode: price.currencyCode, vatState: price.vatState } : null,
+    price: price ? { amount: price.amount.toString(), currencyCode: price.currencyCode, vatState: price.vatState, warrantyMonths: price.warrantyMonths, warrantyType: price.warrantyType } : null,
     stock: stock ? { quantity: stock.quantity, status: stock.status } : null,
     observedAt: found.observedAt,
     recordedAt: found.createdAt,

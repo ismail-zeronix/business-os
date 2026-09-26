@@ -120,7 +120,7 @@ export async function bulkApplyItemsAction(_prev: ActionResult<BulkApplyResult> 
       refreshBroadcast(input.broadcastId);
       return { id: input.broadcastId, updated };
     },
-    { formData },
+    { successMessage: "Changes applied", formData },
   );
 }
 

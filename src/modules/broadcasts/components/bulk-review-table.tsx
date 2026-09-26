@@ -37,9 +37,17 @@ const text = (value: string | number | null) => (value === null ? "" : String(va
  */
 export function BulkReviewTable({ broadcastId, rows }: { broadcastId: string; rows: Row[] }) {
   const [state, formAction] = useActionState(bulkApplyItemsAction, null);
-  useActionFeedback(state, (data) => {
-    if (data.updated === 0) return;
-  });
+  useActionFeedback(state);
+
+  /** What to show in a cell: after a failed save, what the reviewer typed in that row (React 19 resets uncontrolled forms after an action); otherwise the saved value. */
+  function cell(name: string, index: number, initial: string): string {
+    if (state && !state.ok) {
+      const submitted = state.values?.[name];
+      if (Array.isArray(submitted) && typeof submitted[index] === "string") return submitted[index];
+      if (typeof submitted === "string" && index === 0) return submitted;
+    }
+    return initial;
+  }
 
   if (rows.length === 0) return null;
 
@@ -64,31 +72,31 @@ export function BulkReviewTable({ broadcastId, rows }: { broadcastId: string; ro
                 <td className="px-2 py-1 num text-muted-foreground">{i + 1}</td>
                 <td className="px-2 py-1">
                   <input type="hidden" name="id" value={row.id} />
-                  <Input name="description" defaultValue={text(row.description)} className="h-7 min-w-40 text-xs" />
+                  <Input name="description" defaultValue={cell("description", i, text(row.description))} className="h-7 min-w-40 text-xs" />
                 </td>
                 <td className="px-2 py-1">
-                  <Input name="categoryText" defaultValue={text(row.categoryText)} className="h-7 w-24 text-xs" />
+                  <Input name="categoryText" defaultValue={cell("categoryText", i, text(row.categoryText))} className="h-7 w-24 text-xs" />
                 </td>
                 <td className="px-2 py-1">
-                  <Input name="brandText" defaultValue={text(row.brandText)} className="h-7 w-20 text-xs" />
+                  <Input name="brandText" defaultValue={cell("brandText", i, text(row.brandText))} className="h-7 w-20 text-xs" />
                 </td>
                 <td className="px-2 py-1">
-                  <Input name="modelText" defaultValue={text(row.modelText)} className="h-7 w-24 text-xs" />
+                  <Input name="modelText" defaultValue={cell("modelText", i, text(row.modelText))} className="h-7 w-24 text-xs" />
                 </td>
                 <td className="px-2 py-1">
-                  <Input name="partNumber" defaultValue={text(row.partNumber)} className="h-7 w-24 font-mono text-xs" />
+                  <Input name="partNumber" defaultValue={cell("partNumber", i, text(row.partNumber))} className="h-7 w-24 font-mono text-xs" />
                 </td>
                 <td className="px-2 py-1">
-                  <Input name="specText" defaultValue={text(row.specText)} className="h-7 min-w-32 text-xs" />
+                  <Input name="specText" defaultValue={cell("specText", i, text(row.specText))} className="h-7 min-w-32 text-xs" />
                 </td>
                 <td className="px-2 py-1">
-                  <Input name="quantity" inputMode="numeric" defaultValue={text(row.quantity)} className="num h-7 w-14 text-xs" />
+                  <Input name="quantity" inputMode="numeric" defaultValue={cell("quantity", i, text(row.quantity))} className="num h-7 w-14 text-xs" />
                 </td>
                 <td className="px-2 py-1">
-                  <Input name="priceAmount" inputMode="decimal" defaultValue={text(row.priceAmount)} className="num h-7 w-20 text-xs" />
+                  <Input name="priceAmount" inputMode="decimal" defaultValue={cell("priceAmount", i, text(row.priceAmount))} className="num h-7 w-20 text-xs" />
                 </td>
                 <td className="px-2 py-1">
-                  <select name="currencyCode" defaultValue={row.currencyCode ?? ""} className="h-7 rounded-md border bg-background px-1 text-xs">
+                  <select name="currencyCode" defaultValue={cell("currencyCode", i, row.currencyCode ?? "")} className="h-7 rounded-md border bg-background px-1 text-xs">
                     <option value="">—</option>
                     {SUPPORTED_CURRENCIES.map((c) => (
                       <option key={c} value={c}>
@@ -98,7 +106,7 @@ export function BulkReviewTable({ broadcastId, rows }: { broadcastId: string; ro
                   </select>
                 </td>
                 <td className="px-2 py-1">
-                  <select name="vatState" defaultValue={row.vatState} className="h-7 rounded-md border bg-background px-1 text-xs">
+                  <select name="vatState" defaultValue={cell("vatState", i, row.vatState)} className="h-7 rounded-md border bg-background px-1 text-xs">
                     {Object.entries(VAT_STATE_LABEL).map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
@@ -107,7 +115,7 @@ export function BulkReviewTable({ broadcastId, rows }: { broadcastId: string; ro
                   </select>
                 </td>
                 <td className="px-2 py-1">
-                  <select name="stockStatus" defaultValue={row.stockStatus} className="h-7 rounded-md border bg-background px-1 text-xs">
+                  <select name="stockStatus" defaultValue={cell("stockStatus", i, row.stockStatus)} className="h-7 rounded-md border bg-background px-1 text-xs">
                     {Object.entries(STOCK_STATUS_LABEL).map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
@@ -116,10 +124,10 @@ export function BulkReviewTable({ broadcastId, rows }: { broadcastId: string; ro
                   </select>
                 </td>
                 <td className="px-2 py-1">
-                  <Input name="warrantyMonths" inputMode="numeric" defaultValue={text(row.warrantyMonths)} className="num h-7 w-14 text-xs" />
+                  <Input name="warrantyMonths" inputMode="numeric" defaultValue={cell("warrantyMonths", i, text(row.warrantyMonths))} className="num h-7 w-14 text-xs" />
                 </td>
                 <td className="px-2 py-1">
-                  <select name="warrantyType" defaultValue={row.warrantyType ?? ""} className="h-7 rounded-md border bg-background px-1 text-xs">
+                  <select name="warrantyType" defaultValue={cell("warrantyType", i, row.warrantyType ?? "")} className="h-7 rounded-md border bg-background px-1 text-xs">
                     <option value="">—</option>
                     {Object.entries(WARRANTY_TYPE_LABEL).map(([value, label]) => (
                       <option key={value} value={value}>
@@ -129,7 +137,7 @@ export function BulkReviewTable({ broadcastId, rows }: { broadcastId: string; ro
                   </select>
                 </td>
                 <td className="px-2 py-1">
-                  <Input name="notes" defaultValue={text(row.notes)} className="h-7 min-w-24 text-xs" />
+                  <Input name="notes" defaultValue={cell("notes", i, text(row.notes))} className="h-7 min-w-24 text-xs" />
                 </td>
               </tr>
             ))}

@@ -220,10 +220,16 @@ export async function bulkUpdateItems(ctx: ServiceContext, input: { broadcastId:
     if (!broadcast) throw new NotFoundError("Broadcast");
 
     let updated = 0;
-    for (const row of input.rows) {
+    for (const [index, row] of input.rows.entries()) {
       const before = await c.db.broadcastItem.findUnique({ where: { id: row.id } });
-      if (!before || before.reviewStatus !== "PENDING") continue; // reviewed elsewhere in the meantime: leave it, don't fail the batch
-      const after = await updateItem(c, itemUpdateSchema.parse(row));
+      // Another broadcast's item, or one reviewed elsewhere in the meantime: leave it, don't fail the batch.
+      if (!before || before.broadcastId !== input.broadcastId || before.reviewStatus !== "PENDING") continue;
+      const parsed = itemUpdateSchema.safeParse(row);
+      if (!parsed.success) {
+        const first = parsed.error.issues[0];
+        throw new ValidationError(`Row ${index + 1} (${before.description ?? "no description"}): ${first?.message ?? "invalid value"}`, first?.path.length ? { [first.path.join(".")]: first.message } : undefined);
+      }
+      const after = await updateItem(c, parsed.data);
       if (after.updatedAt.getTime() !== before.updatedAt.getTime()) updated++;
     }
     return { updated };

@@ -6,7 +6,7 @@ import { TableShell } from "@/components/data-table/table-shell";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDateTime, formatMoney, formatRelativeAge } from "@/lib/format";
-import { EVIDENCE_CHANNEL_LABEL, EVIDENCE_KIND_LABEL, STOCK_STATUS_LABEL, VAT_STATE_LABEL } from "@/lib/labels";
+import { EVIDENCE_CHANNEL_LABEL, EVIDENCE_KIND_LABEL, STOCK_STATUS_LABEL, VAT_STATE_LABEL, WARRANTY_TYPE_LABEL } from "@/lib/labels";
 import { RawPane } from "@/modules/broadcasts/components/raw-pane";
 import type { ObservationEvidence } from "@/modules/observations/procurement-queries";
 import { Alert } from "@/components/ui/alert";
@@ -83,6 +83,9 @@ export function EvidencePanel({ data }: { data: ObservationEvidence }) {
                 <StockBadge status={data.stock.status} quantity={data.stock.quantity} />
               ) : null,
             },
+            ...(data.price && (data.price.warrantyMonths !== null || data.price.warrantyType !== null)
+              ? [{ label: "Warranty", value: [data.price.warrantyMonths !== null ? `${data.price.warrantyMonths} months` : null, data.price.warrantyType ? WARRANTY_TYPE_LABEL[data.price.warrantyType] : null].filter(Boolean).join(" · ") }]
+              : []),
             { label: "Stated by supplier", value: <span className="num">{formatDateTime(data.observedAt)} · {formatRelativeAge(data.observedAt, now)}</span> },
             { label: "Contact", value: data.contactName },
             { label: "Evidence", value: EVIDENCE_KIND_LABEL[data.evidence.kind] },

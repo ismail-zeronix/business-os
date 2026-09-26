@@ -82,6 +82,22 @@ async function main() {
       const result2 = await bulkUpdateItems(bulkCtx, { broadcastId: broadcast.id, rows: [{ id: item2.id, description: "TEST bulk-updated description", brandText: "", modelText: "", categoryText: "Laptop", partNumber: "", specText: "", quantity: "", priceAmount: "", currencyCode: "", vatState: "", stockStatus: "", warrantyMonths: "12", warrantyType: "ON_SITE", notes: "" }] });
       check("bulkUpdateItems is a no-op when nothing changed", result2.updated === 0);
 
+      // An item of a different broadcast must never be written through this broadcast's Apply all.
+      const otherBroadcast = await tx.broadcast.create({ data: { evidenceSourceId: (await tx.evidenceSource.create({ data: { kind: "SUPPLIER_BROADCAST", channel: "MANUAL_PASTE", rawText: "TEST other broadcast", contentHash: "test-other-broadcast-hash", observedAt: new Date(), createdById: actorUser.id } })).id, supplierId: supplier.id, createdById: actorUser.id } });
+      const foreignItem = await tx.broadcastItem.create({ data: { broadcastId: otherBroadcast.id, position: 1, sourceText: "TEST foreign", origin: "MANUAL", description: "TEST foreign original" } });
+      const scoped = await bulkUpdateItems(bulkCtx, { broadcastId: broadcast.id, rows: [{ id: foreignItem.id, description: "TEST hijacked", brandText: "", modelText: "", categoryText: "", partNumber: "", specText: "", quantity: "", priceAmount: "", currencyCode: "", vatState: "", stockStatus: "", warrantyMonths: "", warrantyType: "", notes: "" }] });
+      const foreignAfter = await tx.broadcastItem.findUnique({ where: { id: foreignItem.id } });
+      check("bulkUpdateItems ignores an item that belongs to another broadcast", scoped.updated === 0 && foreignAfter?.description === "TEST foreign original");
+
+      // A bad row is named, so the reviewer can find it.
+      let rowMessage = "";
+      try {
+        await bulkUpdateItems(bulkCtx, { broadcastId: broadcast.id, rows: [{ id: item2.id, description: "x", brandText: "", modelText: "", categoryText: "", partNumber: "", specText: "", quantity: "", priceAmount: "", currencyCode: "", vatState: "", stockStatus: "", warrantyMonths: "0", warrantyType: "", notes: "" }] });
+      } catch (e) {
+        rowMessage = (e as Error).message;
+      }
+      check("bulkUpdateItems names the failing row and field", /Row 1/.test(rowMessage) && /arranty/.test(rowMessage));
+
       throw new Rollback("rollback");
     });
   } catch (e) {
