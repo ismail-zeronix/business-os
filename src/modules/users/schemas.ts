@@ -30,7 +30,7 @@ export const signInSchema = z.object({
 });
 
 export const setupSchema = z
-  .object({ name: requiredText("Name", 120), email, password: password(), confirmPassword: z.string() })
+  .object({ name: requiredText("Name", 120), email, password: password(), confirmPassword: z.string(), setupToken: z.string().max(200).optional() })
   .refine((v) => v.password === v.confirmPassword, { message: "The two passwords are not the same", path: ["confirmPassword"] })
   .refine((v) => v.password.toLowerCase() !== v.email, notTheEmail);
 

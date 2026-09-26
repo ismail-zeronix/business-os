@@ -5,6 +5,7 @@ import { AppSidebar } from "@/components/application/sidebar";
 import { Topbar } from "@/components/application/topbar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { requireActorOrNull, signInEnabled } from "@/core/permissions/actor";
+import { AssistantLauncher } from "@/modules/ai/components/assistant-launcher";
 import { countBroadcastsAwaitingReview } from "@/modules/broadcasts/queries";
 import { countEnquiriesNeedingAttention } from "@/modules/enquiries/queries";
 
@@ -55,6 +56,7 @@ export default async function WorkspaceLayout({ children }: LayoutProps<"/">) {
           <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-canvas">{children}</main>
         </div>
       </SidebarProvider>
+      {signedIn ? <AssistantLauncher /> : null}
     </ShellProvider>
   );
 }

@@ -10,14 +10,19 @@ import { setupAction } from "../actions";
 import { MIN_PASSWORD } from "../schemas";
 
 /** One-time setup of the first admin. The existing user account is taken over, so earlier records stay under the same person. */
-export function SetupForm({ defaultName, defaultEmail }: { defaultName: string; defaultEmail: string }) {
+export function SetupForm({ defaultName, defaultEmail, requireToken = false }: { defaultName: string; defaultEmail: string; requireToken?: boolean }) {
   const [state, formAction] = useActionState(setupAction, null);
   const err = (name: string) => fieldError(state, name);
   return (
     <form action={formAction} className="space-y-4" noValidate>
       <FormMessage state={state} />
+      {requireToken ? (
+        <Field label="Setup code" htmlFor="setup-token" required error={err("setupToken")} hint="Given to you by whoever installed this system.">
+          <Input id="setup-token" name="setupToken" type="password" autoComplete="off" aria-invalid={Boolean(err("setupToken"))} autoFocus />
+        </Field>
+      ) : null}
       <Field label="Your name" htmlFor="setup-name" required error={err("name")}>
-        <Input id="setup-name" name="name" autoComplete="name" defaultValue={fieldValue(state, "name", defaultName)} aria-invalid={Boolean(err("name"))} autoFocus />
+        <Input id="setup-name" name="name" autoComplete="name" defaultValue={fieldValue(state, "name", defaultName)} aria-invalid={Boolean(err("name"))} autoFocus={!requireToken} />
       </Field>
       <Field label="Email (you sign in with this)" htmlFor="setup-email" required error={err("email")}>
         <Input id="setup-email" name="email" type="email" autoComplete="username" defaultValue={fieldValue(state, "email", defaultEmail)} aria-invalid={Boolean(err("email"))} />

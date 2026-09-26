@@ -16,7 +16,7 @@ An agent is therefore a named configuration over the existing orchestrator, tool
 
 | Agent | Does | Needs first |
 |---|---|---|
-| **Enquiry** | Detect RFQ intent, extract customer, product, quantity, deadline, location; name what is missing; suggest priority; link to existing records; suggest the next action | Enquiry context provider and tools |
+| **Enquiry** | Detect RFQ intent, extract customer, product, quantity, deadline, location; name what is missing; suggest priority; link to existing records; suggest the next action | Enquiry context provider and tools. **Intake chat built 2026-09-26** (asks what is missing, compiles the request, a person presses Create); the rest is not built |
 | **Product** | Normalise names, match part numbers, detect aliases, compare specifications, separate exact matches from equivalents, flag incompatible products | Richer product specifications |
 | **Supplier broadcast** | Read supplier messages and files, extract part number, price, quantity, validity and warranty, draft observations linked to the source, ask when confidence is low | Warranty fields; an LLM extractor behind `BroadcastParser` |
 | **Supplier matching** | Rank offers by the deterministic rules, show exact and equivalent separately, explain differences, exclude suppliers without real stock | Ranking module |

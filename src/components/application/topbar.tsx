@@ -23,7 +23,7 @@ export function Topbar({ account, signedIn, attention = 0 }: { account: Account 
   const trail = crumbsFor(pathname, crumbs);
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-4 bg-canvas px-6">
+    <header className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 bg-canvas px-6 py-2">
       <div className="flex min-w-0 items-center gap-2">
         <SidebarTrigger className="-ml-1 text-muted-foreground" />
         <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
@@ -51,8 +51,8 @@ export function Topbar({ account, signedIn, attention = 0 }: { account: Account 
         <div id="topbar-meta" className="flex shrink-0 items-center gap-1.5 empty:hidden" />
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
-        <div id="topbar-actions" className="flex items-center gap-2 empty:hidden" />
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+        <div id="topbar-actions" className="flex flex-wrap items-center justify-end gap-2 empty:hidden" />
         <Link
           href="/enquiries"
           aria-label={attention > 0 ? `${attention} enquiries need attention` : "Enquiries"}

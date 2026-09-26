@@ -1,12 +1,14 @@
 import type { ServiceContext } from "../../../core/database/tx";
 import { assertCapability } from "../../../core/permissions/capabilities";
 import type { Budget } from "../orchestrator/budget";
+import { draftEnquiryTool } from "./draft-enquiry";
 import { searchProductsTool } from "./search-products";
 import type { AIToolDefinition } from "./types";
 
 /** Every tool the AI layer can use. Static: adding a tool is a code change with its own plan, never something a model can do. */
 export const TOOLS = {
   search_products: searchProductsTool,
+  draft_enquiry: draftEnquiryTool,
 } as const;
 
 export type ToolName = keyof typeof TOOLS;

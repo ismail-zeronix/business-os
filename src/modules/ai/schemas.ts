@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { AiProvider } from "../../generated/prisma/enums";
-import { requiredText } from "../../core/validation/fields";
+import { optionalEmail, optionalText, requiredText } from "../../core/validation/fields";
 
 // ── provider settings ───────────────────────────────────────────────────────────────────────────────────────────
 
@@ -58,6 +58,42 @@ export type AnswerDraft = z.output<typeof answerDraftSchema>;
 
 /** When the rules find nothing, the model may propose search terms. They are searched like anything a person types. */
 export const searchTermsSchema = z.object({ searchTerms: z.array(z.string().trim().min(2).max(80)).max(3) });
+
+// ── enquiry intake chat ──────────────────────────────────────────────────────────────────────────────────────────
+
+export const ENQUIRY_CHAT_MAX_MESSAGES = 30;
+
+/** One turn from the panel. The conversation lives in the browser, so it is untrusted: it is only ever sent to the model as text. */
+export const enquiryChatTurnSchema = z.object({
+  history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(4000) })).max(ENQUIRY_CHAT_MAX_MESSAGES),
+  message: requiredText("Message", 2000),
+});
+export type EnquiryChatTurnInput = z.input<typeof enquiryChatTurnSchema>;
+
+/**
+ * What the model returns for one intake turn. `summary` is the request compiled as plain text in the shape a person would paste into a new
+ * enquiry; it is only set when status is READY. Missing details stay unknown: the model must not fill them in.
+ */
+export const enquiryDraftReplySchema = z
+  .object({
+    reply: z.string().trim().min(1).max(1500),
+    status: z.enum(["GATHERING", "READY"]),
+    missing: z.array(z.string().trim().min(1).max(200)).max(8),
+    quickReplies: z.array(z.string().trim().min(1).max(60)).max(4),
+    summary: z.string().trim().max(6000).nullable(),
+    requesterName: z.string().trim().max(200).nullable(),
+    requesterEmail: z.string().trim().max(254).nullable(),
+  })
+  .refine((v) => v.status === "GATHERING" || (v.summary !== null && v.summary.length > 0), { message: "summary is required when status is READY", path: ["summary"] });
+export type EnquiryDraftReply = z.output<typeof enquiryDraftReplySchema>;
+
+/** Sent when the person clicks "Create enquiry draft": the summary they saw, and who asked. */
+export const createEnquiryFromChatSchema = z.object({
+  summary: requiredText("Summary", 6000),
+  requesterName: optionalText(200),
+  requesterEmail: optionalEmail(),
+});
+export type CreateEnquiryFromChatInput = z.input<typeof createEnquiryFromChatSchema>;
 
 /** Test connection: the smallest structured call that proves the key, the model and structured output all work. */
 export const connectionCheckSchema = z.object({ ok: z.boolean() });

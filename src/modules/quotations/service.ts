@@ -19,6 +19,9 @@ import { dateOnly, parseDateOnly, nextQuotationReference, quotationLabel, quotat
 
 const decimalText = (value: { toString(): string } | null): string | null => (value === null ? null : value.toString());
 
+/** A stored decimal as the two-decimal text the pricing maths returns ("100" and "100.00" are the same amount), so an unchanged value is not reported as a change. */
+const twoDecimals = (value: { toString(): string } | null): string | null => (value === null ? null : Number(value.toString()).toFixed(2));
+
 type Lines = { id: string; quantity: number | null; unitPrice: { toString(): string } | null }[];
 
 const totalsOf = (lines: Lines, vatPercent: { toString(): string }) => computeTotals(lines.map((l) => ({ quantity: l.quantity, unitPrice: l.unitPrice })), vatPercent);
@@ -296,7 +299,7 @@ export async function updateLine(ctx: ServiceContext, input: LineUpdateInput) {
 
     const after = { description: input.description, partNumber: input.partNumber, quantity: input.quantity, unitPrice: pricing.unitPrice, markupPercent: pricing.markupPercent };
     const changes = diffFields(
-      { description: line.description, partNumber: line.partNumber, quantity: line.quantity, unitPrice: decimalText(line.unitPrice), markupPercent: decimalText(line.markupPercent) },
+      { description: line.description, partNumber: line.partNumber, quantity: line.quantity, unitPrice: twoDecimals(line.unitPrice), markupPercent: twoDecimals(line.markupPercent) },
       after,
       ["description", "partNumber", "quantity", "unitPrice", "markupPercent"],
     );
@@ -377,7 +380,7 @@ export async function refreshLineCost(ctx: ServiceContext, input: LineIdInput) {
       details: {
         line: line.description,
         cost: { from: costText(line.costObservation), to: costText(next) },
-        ...(unitPrice !== decimalText(line.unitPrice) ? { unitPrice: { from: decimalText(line.unitPrice), to: unitPrice } } : {}),
+        ...(unitPrice !== twoDecimals(line.unitPrice) ? { unitPrice: { from: twoDecimals(line.unitPrice), to: unitPrice } } : {}),
       },
     });
     await touchEnquiryIfAny(c, line.quotation.enquiryId);

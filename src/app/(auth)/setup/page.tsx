@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { db } from "@/core/database/client";
+import { setupTokenRequired } from "@/core/auth/setup-token";
 import { signInEnabled } from "@/core/permissions/actor";
 import { SetupForm } from "@/modules/users/components/setup-form";
 
@@ -20,7 +21,7 @@ export default async function SetupPage() {
         Create the admin account. {existing ? `Everything done so far was recorded under "${existing.name}"; this account takes it over, so the history stays with you. ` : ""}
         After this, everyone signs in, and you can add colleagues under Settings.
       </p>
-      <SetupForm defaultName="" defaultEmail="" />
+      <SetupForm defaultName="" defaultEmail="" requireToken={setupTokenRequired()} />
     </>
   );
 }

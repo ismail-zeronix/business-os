@@ -50,7 +50,7 @@ export async function setupAction(_prev: NoData | null, formData: FormData): Pro
     async () => {
       if (await signInEnabled()) throw new ConflictError("Sign-in is already set up. Please sign in.");
       const input = setupSchema.parse(formDataToObject(formData));
-      const session = await setupFirstAdmin({ name: input.name, email: input.email, password: input.password });
+      const session = await setupFirstAdmin({ name: input.name, email: input.email, password: input.password, setupToken: input.setupToken });
       await startSession(session.token, session.expiresAt);
       redirect("/");
     },

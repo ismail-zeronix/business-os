@@ -7,8 +7,17 @@ import { assertCapability } from "@/core/permissions/capabilities";
 import { runAction, type ActionResult } from "@/core/validation/action-result";
 import { formDataToObject } from "@/core/validation/form-data";
 import { testProviderConnection } from "./orchestrator/connection";
+import { createEnquiryFromChat, runEnquiryDraftTurn, type EnquiryChatTurn } from "./orchestrator/enquiry-draft";
 import { loadProviderConfig } from "./queries";
-import { aiProviderActiveSchema, aiProviderCreateSchema, aiProviderTestSchema, aiProviderUpdateSchema } from "./schemas";
+import {
+  aiProviderActiveSchema,
+  aiProviderCreateSchema,
+  aiProviderTestSchema,
+  aiProviderUpdateSchema,
+  type CreateEnquiryFromChatInput,
+  type EnquiryChatTurnInput,
+} from "./schemas";
+import type { DraftEnquiryOutput } from "./tools/draft-enquiry";
 import { createProviderSetting, setProviderActive, updateProviderSetting } from "./service";
 
 /**
@@ -57,6 +66,23 @@ export async function setAiProviderActiveAction(_prev: IdResult | null, formData
     },
     { successMessage: formData.get("active") === "true" ? "The assistant now uses this provider" : "The assistant is switched off", formData },
   );
+}
+
+// ── enquiry intake chat ─────────────────────────────────────────────────────────────────────────────────────────
+
+/** One chat turn. Called from the panel, not a form. Nothing is saved: the model only replies. */
+export async function sendEnquiryChatMessageAction(input: EnquiryChatTurnInput): Promise<ActionResult<EnquiryChatTurn>> {
+  return runAction(async () => runEnquiryDraftTurn(await getServiceContext(), input));
+}
+
+/** The person pressed "Create enquiry draft". The requirements it proposes stay PENDING on the enquiry until they are confirmed. */
+export async function createEnquiryFromChatAction(input: CreateEnquiryFromChatInput): Promise<ActionResult<DraftEnquiryOutput>> {
+  return runAction(async () => {
+    const created = await createEnquiryFromChat(await getServiceContext(), input);
+    revalidatePath("/enquiries");
+    revalidatePath("/", "layout");
+    return created;
+  });
 }
 
 type TestResult = ActionResult<{ model: string; latencyMs: number }>;

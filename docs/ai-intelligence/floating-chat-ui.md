@@ -1,5 +1,7 @@
 # Floating assistant
 
+> **Built so far (2026-09-26):** the button, the Sheet panel, mounting, the THINKING / ERROR dot, one suggestion pill ("Start a new enquiry") and quick-reply pills, for the enquiry intake chat only. Not built: page context, route-based prompts, the answer blocks, copy / regenerate / feedback, saved conversations, streaming. The rest of this file is still the design for those.
+
 Design v3 applies (`docs/design/UI_SYSTEM.md`): the existing tokens, shadcn parts and Lucide icons. The assistant must look like part of the application, not a bolted-on chat widget. No re-skin, no new font, no gradients, no emoji icons.
 
 ## Mounting

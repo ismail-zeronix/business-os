@@ -27,6 +27,8 @@ Also: `docs/decisions/0007-ai-intelligence-layer.md`, a new `CURRENT.md` (sign-i
 
 **Done when** the documents match the approved plan and every path they cite exists.
 
+**Update 2026-09-26.** The floating assistant shell exists, built first for one job: the enquiry intake chat (`docs/plans/active/CURRENT.md`, last section). It reuses the PENDING enquiry pipeline instead of `AiSuggestion`, keeps its conversation in the browser (no `AiConversation` tables yet) and does not stream. General Q&A, saved conversations and feedback from Stage 2 are still to do, and will add to the same panel.
+
 ## Stage 1 — Core
 
 Provider interface and the Anthropic, OpenAI and Gemini adapters behind a registry. `AiSetting` and Settings > AI (admin only, encrypted write-only keys, test-connection). `AiExecution` logging. Tool registry with `search_products`. Capability map in `core/permissions`. Context-provider registry with the product, price, stock, supplier and business-rule providers. Prompt registry with the shared Zeronix style block. `AIResponse` zod schema. Orchestrator: intent, permissions, context, deterministic rules, provider call, validation, one repair retry, audit.

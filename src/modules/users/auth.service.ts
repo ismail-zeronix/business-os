@@ -1,4 +1,5 @@
 import { hashPassword, verifyPassword } from "../../core/auth/password";
+import { assertSetupToken } from "../../core/auth/setup-token";
 import { hashToken, LOCK_MINUTES, MAX_FAILED_LOGINS, newSessionToken, sessionExpiry } from "../../core/auth/session";
 import { db as sharedDb } from "../../core/database/client";
 import { inTransaction, type Db, type ServiceContext } from "../../core/database/tx";
@@ -63,9 +64,11 @@ export async function signOut(token: string, db: Db = sharedDb): Promise<void> {
 
 /**
  * First-time setup: the existing (development) user becomes the admin, with a name, email and password, so every earlier record stays
- * attributed to the same person. Allowed only while no active admin has a password. Signs the person in.
+ * attributed to the same person. Allowed only while no active admin has a password (and, when SETUP_TOKEN is set, only with that code).
+ * Signs the person in.
  */
-export async function setupFirstAdmin(input: Pick<SetupInput, "name" | "email" | "password">, db: Db = sharedDb): Promise<SessionGrant> {
+export async function setupFirstAdmin(input: Pick<SetupInput, "name" | "email" | "password"> & { setupToken?: string | null }, db: Db = sharedDb): Promise<SessionGrant> {
+  assertSetupToken(input.setupToken);
   const hash = await hashPassword(input.password);
   const token = newSessionToken();
   const expiresAt = sessionExpiry();

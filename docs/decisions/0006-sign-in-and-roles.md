@@ -21,3 +21,9 @@ The application holds real customer email, supplier prices and margins. Until no
 - **Still true:** the build is meant for a trusted network. Serve it over HTTPS in production (the cookie is `Secure` only on the production build), keep Postgres off the network, and complete /setup before exposing it: until an admin has a password, whoever reaches /setup first can claim the admin account.
 - Deliberately not built: password reset by email (an admin resets it), two-factor authentication, single sign-on, more than two roles, per-record permissions, remote sign-out screens. See `docs/ideas/BACKLOG.md`.
 - The test-support helper creates an ADMIN actor; the pure-logic checks and the browser checks used for this decision are listed in `docs/plans/completed/` once the milestone is archived.
+
+## Addendum (2026-09-26): setup code and proxy origins
+
+- `/setup` is open to whoever reaches it first on a fresh deployment. An optional `SETUP_TOKEN` environment variable makes the setup form (and `setupFirstAdmin`) require that code. Unset, nothing changes.
+- Server actions compare the request's `Origin` with `Host` / `X-Forwarded-Host`. Behind a proxy that does not forward the public host, set `APP_ALLOWED_ORIGINS` (comma-separated); it feeds `serverActions.allowedOrigins`.
+- The session cookie is `Secure` when `NODE_ENV=production`, so production must be served over HTTPS.
