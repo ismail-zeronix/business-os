@@ -1,22 +1,29 @@
 # Brands and categories
 
-**Status:** TO BE FILLED
+**Status:** DRAFT
 **Purpose:** The brands and product categories Zeronix deals in, so an AI knows the range.
+**Sources:** zeronix.ae and biometricdevice.ae (read 2026-09-27). The live list is in Settings in the app.
 
-## Categories
+## Product categories (zeronix.ae)
 
-- TO BE FILLED: The product categories Zeronix sells, in the company's own grouping
+- Laptops, desktops, servers, storage, networking equipment, CCTV and IP cameras, biometric devices, printers, UPS systems, firewalls.
 
-## Brands
+## Authorized brands (zeronix.ae)
 
-- TO BE FILLED: Brands Zeronix actively sells
-- TO BE FILLED: Brands it can source but does not push
-- TO BE FILLED: Brands it will not sell
+- Dell, HP, Lenovo, Cisco, Hikvision, Dahua, ZKTeco, Fortinet, Seagate, Schneider Electric (APC), Epson, Microsoft.
 
-## Where the live list is
+## Biometric brands and hardware (biometricdevice.ae)
 
-- TO BE FILLED: The live list of brands and categories is kept in Settings in the app; this page explains how the company thinks about them
+- Brands named: ZKTeco, Suprema, Hikvision. (Suprema is not in the zeronix.ae list; confirm it is a brand Zeronix sells.)
+- Hardware: face recognition terminals, fingerprint and palm readers, card and RFID readers, turnstiles, speed gates and barriers.
+
+## Things to confirm
+
+- The website says "authorized brands". TO BE FILLED: which brands Zeronix is formally authorized for and which it simply sources through suppliers.
+- TO BE FILLED: Brands Zeronix can source but does not push, and brands it will not sell.
+- TO BE FILLED: Categories not shown on the websites that Zeronix also supplies.
+- The biometricdevice.ae site says brands are "stocked". Zeronix works as a no-stock reseller. TO BE FILLED: whether any items are actually held in stock.
 
 ## Unknowns
 
-- Everything marked TO BE FILLED above is unknown. Do not assume it; ask.
+- The items under "Things to confirm" are unknown. Do not assume them; ask.

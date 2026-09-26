@@ -25,6 +25,7 @@
 | 03 Sales team | Roles, the daily routine, weekly and monthly tasks, and the playbooks the salesmen follow |
 | 04 Procurement | How Zeronix sources products and chooses suppliers |
 | 05 AI instructions | How an AI module must behave for Zeronix |
+| 06 Product guide | The product categories (laptops, desktops, workstations): what separates them and example model lines |
 
 ## Page template
 
@@ -34,4 +35,5 @@ Each page has a title, a **Status**, a one-line **Purpose**, sections (each a li
 
 - Zeronix Technology LLC is a **no-stock reseller**: it does not hold inventory. It buys from suppliers against customer enquiries.
 - Supplier prices and stock are **observations** (product, supplier, value, time observed, evidence) and are never a fixed field on a product.
+- Pages marked DRAFT were written from the company websites (zeronix.ae, biometricdevice.ae) and the owner. Website statements are marketing claims until the owner confirms them.
 - Times are stored in UTC and shown in the Asia/Dubai time zone.

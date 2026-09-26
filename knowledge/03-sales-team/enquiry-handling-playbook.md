@@ -7,6 +7,10 @@
 
 - A missing quantity, VAT, warranty, currency or part number stays unknown; it is asked for, never guessed.
 
+## Stated on biometricdevice.ae (confirm before relying on it)
+
+- For biometric projects the site promises a free on-site survey, then a fixed written quotation covering hardware, software, installation and training. See biometric-solutions.
+
 ## Receiving
 
 - TO BE FILLED: Where enquiries arrive and how they are logged
