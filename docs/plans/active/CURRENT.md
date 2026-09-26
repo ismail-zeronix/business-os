@@ -8,6 +8,8 @@
 
 **Stabilization** (before any production use). The main modules are built. The previous milestone (Customer Quotation, email quotations, broadcast bulk confirm and review table, AI enquiry intake chat) is archived in `docs/plans/completed/2026-09-26-quotations-email-and-ai-enquiry-chat.md`; its rules and its "not verified" lists stay in force. The full test checklist is `docs/plans/STABILIZATION.md`.
 
+**Knowledge screen (2026-09-27, not part of the stabilization steps):** a read-only Knowledge screen (`/knowledge`, all signed-in users) shows the markdown files in `knowledge/` (company, services, sales team, procurement, AI instructions). The pages are a skeleton to be filled with real business facts from the owner; see `docs/decisions/0009-knowledge-base-files.md`. The AI module stays paused.
+
 ## Steps, in order
 
 1. **Browser verification pass (no new features).** Clear the "not verified in a browser" items by hand on the project database, with `TEST` data:

@@ -18,7 +18,7 @@ describe("NAVIGATION", () => {
   const hrefs = NAVIGATION.flatMap((group) => group.items.map((item) => item.href));
 
   it("contains exactly the screens of the current milestone, with no future modules", () => {
-    expect(hrefs).toEqual(["/", "/enquiries", "/customers", "/quotations", "/search", "/suppliers", "/broadcasts", "/products", "/audit", "/settings"]);
+    expect(hrefs).toEqual(["/", "/enquiries", "/customers", "/quotations", "/search", "/suppliers", "/broadcasts", "/products", "/knowledge", "/audit", "/settings"]);
     for (const future of ["/sourcing", "/rfqs", "/agents"]) {
       expect(hrefs).not.toContain(future);
     }

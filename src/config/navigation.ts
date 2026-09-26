@@ -1,4 +1,4 @@
-import { Building2, FileText, Inbox, LayoutDashboard, Package, RadioTower, ScrollText, Search, Settings, Users, type LucideIcon } from "lucide-react";
+import { Building2, FileText, Inbox, LayoutDashboard, Library, Package, RadioTower, ScrollText, Search, Settings, Users, type LucideIcon } from "lucide-react";
 import { SETTINGS_NAVIGATION } from "./settings-navigation";
 
 /** `adminOnly`: shown only to admins (the screen behind it also refuses everyone else). */
@@ -28,6 +28,7 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Products", href: "/products", icon: Package },
     ],
   },
+  { label: "Company", items: [{ label: "Knowledge", href: "/knowledge", icon: Library }] },
   {
     label: "Admin",
     items: [

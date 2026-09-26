@@ -85,5 +85,10 @@ Ideas that are **not authorised for implementation**. Do not build these unless 
 - A separate permission for who may send, an approval step for large quotations, and a per-person From address.
 - Open and click tracking was deliberately left out (privacy, deliverability); add only if wanted.
 
+## Knowledge screen (asked 2026-09-27)
+- Editing in the app: new file, new folder, rename and edit for `/knowledge` (admin only, audited, writing to the repo's `knowledge/` folder). The viewer is read only for now; add the write functions to `modules/knowledge/service.ts` when wanted. Consider that a deployed app may not be able to write back to git, so edits may need a commit step.
+- Show each page's `Status:` (TO BE FILLED / DRAFT / CONFIRMED) as a small marker in the tree, and a count of pages still to fill.
+- The AI context builder reads `knowledge/` (belongs to the paused AI plan): README rules first, then the pages relevant to the task, and reports which pages were TO BE FILLED.
+
 ## Later modules (see `docs/plans/ROADMAP.md`)
 Sourcing/RFQ, Second Brain (pgvector), multi-agent platform, WhatsApp and other channels, advanced analytics.
