@@ -26,6 +26,7 @@
 | 04 Procurement | How Zeronix sources products and chooses suppliers |
 | 05 AI instructions | How an AI module must behave for Zeronix |
 | 06 Product guide | The product categories (laptops, desktops, workstations): what separates them and example model lines |
+| 07 How to use the app | A map of the application and step-by-step guides, mainly for adding and confirming supplier broadcasts |
 
 ## Page template
 
