@@ -9,6 +9,7 @@ import { createCustomer } from "../customers/service";
 import { createEvidence } from "../evidence/service";
 import { findMatchCandidates, pickAutoLink } from "../products/matching";
 import { enquiryRulesParser } from "./parsing/enquiry-parser";
+import { createParsedRequirements, proposeRequirementsForItem } from "./requirement.service";
 import { emailHeaderLineCount, emailSubjectLineIndex } from "./parsing/quoted";
 import type { EnquiryHeaderProposal } from "./parsing/types";
 import type { CustomerFromRequesterInput, EnquiryArchiveInput, EnquiryHeaderInput, EnquiryNoteInput, EnquirySuggestionInput, EnquiryStatusInput } from "./schemas";
@@ -76,6 +77,7 @@ export async function createEnquiry(ctx: ServiceContext, input: EnquiryCreateSer
     });
 
     // Items are proposals: pre-link a product only when exactly one strong match exists. Everything stays PENDING.
+    let requirementCount = 0;
     for (const item of parsed.items) {
       const candidates = await findMatchCandidates(c.db, { partNumber: item.partNumber, model: item.modelText, brandText: item.brandText, description: item.description });
       const link = pickAutoLink(candidates);
@@ -90,7 +92,7 @@ export async function createEnquiry(ctx: ServiceContext, input: EnquiryCreateSer
         specText: fields.specText,
         quantity: fields.quantity,
       };
-      await c.db.enquiryItem.create({
+      const created = await c.db.enquiryItem.create({
         data: {
           ...fields,
           enquiryId: enquiry.id,
@@ -101,13 +103,15 @@ export async function createEnquiry(ctx: ServiceContext, input: EnquiryCreateSer
           matchBasis: link?.basis ?? null,
         },
       });
+      // Structured specification requirements are proposed from the same wording, next to the raw text the item keeps.
+      requirementCount += await createParsedRequirements(c, created.id, proposeRequirementsForItem({ sourceText: fields.sourceText, description: fields.description, specText: fields.specText }));
     }
 
     await writeAudit(c, {
       action: "enquiry.created",
       entityType: "Enquiry",
       entityId: enquiry.id,
-      details: { number: enquiry.number, source: input.source.kind === "new" ? input.source.channel : "EMAIL", items: parsed.items.length, parser: `${enquiryRulesParser.name} v${enquiryRulesParser.version}` },
+      details: { number: enquiry.number, source: input.source.kind === "new" ? input.source.channel : "EMAIL", items: parsed.items.length, requirements: requirementCount, parser: `${enquiryRulesParser.name} v${enquiryRulesParser.version}` },
     });
     return { enquiry, itemCount: parsed.items.length };
   });

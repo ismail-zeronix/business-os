@@ -121,6 +121,7 @@ export async function getProduct(id: string) {
       brand: { select: { id: true, name: true, status: true } },
       category: { select: { id: true, name: true, status: true } },
       aliases: { orderBy: { alias: "asc" }, select: { id: true, alias: true, source: true, createdAt: true } },
+      attributes: { where: { retractedAt: null }, select: { id: true, attributeKey: true, rawValue: true, valueText: true, valueNum: true, valueList: true, unit: true, confidence: true, source: true } },
     },
   });
 }

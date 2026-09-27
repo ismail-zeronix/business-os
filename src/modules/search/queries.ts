@@ -3,6 +3,7 @@ import type { RecordStatus } from "../../generated/prisma/enums";
 import { getProductsIntelligence, type SupplierIntelligenceRow } from "../observations/procurement-queries";
 import { findMatchCandidates, type MatchCandidate } from "../products/matching";
 import { searchProducts } from "../products/queries";
+import { canonicalModelKey } from "../specs/model-key";
 
 /** Most products shown for one search. More matches than this means the person should refine the query, not page through them. */
 export const MAX_SEARCH_RESULTS = 20;
@@ -32,13 +33,17 @@ export async function searchProcurement(rawQuery: string): Promise<ProcurementSe
   const q = rawQuery.trim();
   if (!q) return { results: [], total: 0, truncated: false };
 
-  const [candidates, text] = await Promise.all([
+  const modelKey = canonicalModelKey(q);
+  const [candidates, text, sameModel] = await Promise.all([
     findMatchCandidates(db, { partNumber: q, model: q, description: q }),
     searchProducts({ q, page: 1 }),
+    // "E14 Gen 7" and "E14 G7" are one model: products that share the canonical model key are listed as possible matches (never as pinned ones).
+    modelKey ? db.product.findMany({ where: { modelKey, status: { not: "ARCHIVED" } }, orderBy: { name: "asc" }, take: MAX_SEARCH_RESULTS, select: { id: true } }) : Promise.resolve([]),
   ]);
 
   const pinned = new Map(candidates.filter((c) => c.strength === "EXACT" || c.strength === "PROBABLE").map((c) => [c.productId, c]));
-  const orderedIds = [...new Set([...pinned.keys(), ...text.rows.map((r) => r.id)])];
+  const sameModelIds = new Set(sameModel.map((p) => p.id));
+  const orderedIds = [...new Set([...pinned.keys(), ...sameModelIds, ...text.rows.map((r) => r.id)])];
   const total = Math.max(text.total, orderedIds.length);
   const shownIds = orderedIds.slice(0, MAX_SEARCH_RESULTS);
   if (shownIds.length === 0) return { results: [], total: 0, truncated: false };
@@ -75,7 +80,7 @@ export async function searchProcurement(rawQuery: string): Promise<ProcurementSe
         isTemporary: p.isTemporary,
         status: p.status,
         aliases: p.aliases.map((a) => a.alias),
-        match: hit ? { basis: hit.basis, strength: hit.strength } : null,
+        match: hit ? { basis: hit.basis, strength: hit.strength } : sameModelIds.has(id) ? { basis: "MODEL" as const, strength: "POSSIBLE" as const } : null,
         suppliers: intelligence.get(id) ?? [],
       },
     ];

@@ -10,6 +10,17 @@
 
 **Knowledge screen (2026-09-27, not part of the stabilization steps):** a read-only Knowledge screen (`/knowledge`, all signed-in users) shows the markdown files in `knowledge/` (company, services, sales team, procurement, AI instructions). The pages are a skeleton to be filled with real business facts from the owner; see `docs/decisions/0009-knowledge-base-files.md`. The AI module stays paused.
 
+**Right dock and contact notes (2026-09-27, not part of the stabilization steps):** a slim icon rail on the right edge of every signed-in screen opens tool panels. The first tool is **Supplier contacts**: paste rough contact text, save it as a free-floating note (not linked to a supplier) with name, company, phones and emails read from the text by rules and confirmed by the person, plus a typed description; search, edit, remove (archive). Built as a registry so later tools are one entry each. Module doc: `docs/modules/CONTACT_NOTES.md`. Verified so far: typecheck, lint, and the service against the project database; the screen itself still needs a signed-in browser check.
+
+**Structured requirements and specification matching (2026-09-27, approved scope change, on branch `feature/enquiry-requirements`):** upgrades how enquiry requirements are represented and how products are matched, underneath the unchanged workflow (enquiry -> evidence -> parser -> item -> matching -> review -> sourcing -> decision -> quotation). Plan in phases, each shippable:
+1. **Structured enquiry requirements** (built, see Status below): `enquiry_requirements`, pure spec normalizers in `src/modules/specs`, extraction on create, human edit with retraction, chips in the item row. No matching change.
+2. **Product attributes** (built, see Status below): `product_attributes`, `products.model_key` (Gen 7 = G7), extraction from product data on create, dry-run backfill script (writing to existing products needs the owner's go-ahead), category set on auto-created products. Human correction of product attributes (edit UI) comes with phase 3.
+3. Compare and explain (shadow mode): structured candidate search, per-requirement verdicts (EXACT, COMPATIBLE, UPGRADE, PARTIAL, MISMATCH, UNKNOWN), ranking and explanation in the candidate list. Auto-link unchanged.
+4. Auto-link gating: `pickAutoLink` redefined so conflicts and unknown must-have specifications force human review.
+5. Broadcast side uses the same attributes so model-only lines no longer collapse two configurations into one product.
+6. Other categories (server, switch) and AI-proposed requirements.
+Parked, not in this scope: supplier ranking, stock-status inference, `match_feedback`. `product_variants` is deliberately not added: `Product` acts as the sellable variant.
+
 ## Steps, in order
 
 1. **Browser verification pass (no new features).** Clear the "not verified in a browser" items by hand on the project database, with `TEST` data:
@@ -72,6 +83,30 @@ Second slice (same day), service integration tests on the `*_test` database:
 Third slice: pure-logic tests for `buildRequestMessage` / `describeLine` / `composeSentText`, `htmlToText` / `stripQuotedForScoring`, `scoreEmail`, and the quotation reference and Asia/Dubai date helpers (midnight and year boundaries).
 
 Still to do in Step 3: guard and service tests for the enquiry and email-sync tables (`ingestMessage`, `syncAccount`, triage, enquiry item confirm rules, `createEnquiry` from email), `normalizeEmail`; and Playwright, which needs `@playwright/test` (a new dev dependency, so it needs a go-ahead) and a sign-in for the browser. `docs/plans/STABILIZATION.md` lists each. The 2026-09-26 manual browser pass (above) covers the same journeys by hand.
+
+## Structured requirements, phase 1 status (2026-09-27)
+
+Built and verified on the project database with a `TEST` enquiry (ENQ-00004, archived): 12 requirements proposed for two lines (CPU, RAM, storage, type, screen, keyboard, resolution, OS read correctly from the E14 and Latitude wording); a human edit retracted the parsed row and wrote a `HUMAN` row (both kept); "Read again" left human rows alone; a duplicate, an unreadable CPU, a bad range and a wrong operator were refused with plain messages; the database refused an UPDATE of a value, a DELETE, and a BETWEEN with no upper value; four audit rows and `requirements: 12` on `enquiry.created`. Typecheck and ESLint clean; migration `20260927100000_enquiry_requirements` applied with `migrate deploy` (additive).
+
+**Not verified in a browser** (sign-in is required and no bypass was used): the chips, the Add and Edit popovers, and the read-only view on a reviewed item. Known limits of the reader: an unit-less capacity ("512 NVMe") is read as GB with MEDIUM confidence; "FHD+" is not read as FHD; Wi-Fi, GPU, panel and touch are not extracted yet; a requirement written only in an attachment is not seen.
+
+## Structured requirements, phase 2 status (2026-09-27)
+
+Built: migration `20260927140000_product_attributes` (applied, additive), `product_attributes` and `products.model_key`, `canonicalModelKey`, product-attribute extraction on `createProduct`, `model_key` kept current on update, category resolved on auto-created products, a read-only "Specifications" panel on the product page, and `npm run specs:backfill`. Typecheck and ESLint clean. Verified with a `TEST` product: key `E14G7`, six attributes read, the key follows an edit of the model, and the database refused an attribute update, a delete and a row with two values.
+
+**Backfill dry run on the project database (nothing written):** 139 products; 123 would get a model key, 131 would gain attributes (619 values: cpu 85, os 86, ram 115, resolution 39, screen 92, storage 116, storage type 86), 27 would get a category (112 have no category text on any of their lines, so they stay unknown). **Applied on 2026-09-27 with the owner's go-ahead** (`--apply`, then `--apply-categories`): 123 model keys, 619 attribute values, 27 categories; a re-run finds nothing left to write.
+
+Known limits: the model key still differs when the model text includes the family word; a platform code such as "LNL" stays in the key; the product-attribute edit UI is not built; the product page panel was not seen in a browser (sign-in required).
+
+## Broadcast variant safety, parser v5 (2026-09-27)
+
+From the first real Red Data Computer list: parser version 5 (signature block skipped and read, price/currency false positive fixed, glued CPU+RAM split, INCOMING stock, tower category) and variant-safe product resolution for broadcast lines (`resolveProductForItem`). Verified by running the whole list through `createBroadcast` inside a rolled-back transaction on the project database: 6 lines gave 6 distinct products (the three Dell T2 lines sharing FCT2250 stayed three variants); nothing was saved. Existing broadcast, product and lib tests pass (124). This is phase 5 of the plan, built early because real data showed the collapse.
+
+## Broadcast parser v6 and real supplier data (2026-09-27)
+
+Owner-supplied real broadcasts were used to train the rule parser (version 6). Read: pipe-separated, comma-separated and one-line product lists, `|| title ||` + detail lines, a heading with one variant per line ("240GB - SA400S37/240G"), priced one-liners ("@325+vat"), Apple lines that start with a code, sender banners and footers ("SUPP :", "Person :", "CALL @", "Samir - +971..."), Apple / Snapdragon / Core Ultra X9 / Core 7 CPUs, months of warranty, "Last 4 Units" as LIMITED. Memory cards and USB sticks get no laptop attributes; GPU memory is not RAM. Brands added from the lists (Apple, TP-Link, ASUS, LG, MSI, Microsoft, Samsung, Seagate, Hiksemi, SanDisk, Apacer, Kingston, Acer) and 30 brandless products were given the brand their own name states (audited, `via: brand read from the product name`). Seven suppliers and their contacts were created from list signatures and 11 broadcasts were saved (all items PENDING; no observations until a person confirms). Full test suite 441 passed; the parser has no new tests (owner's development-first rule).
+
+**AI layer changes from the same patterns:** search terms no longer treat capacities and speeds ("16GB", "144Hz") as part numbers (`ai/intents.ts`); `searchProcurement` (used by `/search` and the assistant's `search_products`) also lists products that share the canonical model key ("E14 Gen 7" finds "E14 G7") as possible MODEL matches; `search_products` returns each product's active specifications and the evidence package shows them as "specifications read from its name (not verified)"; prompts `answer-v2`, `interpret-v2` (code shapes) and `enquiry-draft-v2` (specification vocabulary, which details to ask for first). No provider or budget change; the model still never writes data and never decides a match.
 
 ## Out of scope
 

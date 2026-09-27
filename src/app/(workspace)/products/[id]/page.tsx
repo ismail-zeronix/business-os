@@ -23,6 +23,7 @@ import { AliasPanel } from "@/modules/products/components/alias-panel";
 import { ProductForm } from "@/modules/products/components/product-form";
 import { listBrandOptions, listCategoryOptions } from "@/modules/products/master-data.queries";
 import { getProduct } from "@/modules/products/queries";
+import { ProductSpecifications } from "@/modules/products/components/product-specifications";
 
 const TABS = ["overview", "activity"] as const;
 type Tab = (typeof TABS)[number];
@@ -121,6 +122,12 @@ export default async function ProductDetailPage(props: PageProps<"/products/[id]
                   { label: "Manufacturer SKU", value: product.manufacturerSku, mono: true },
                   { label: "Description", value: product.description },
                 ]}
+              />
+            </PanelSection>
+            <PanelSection title="Specifications" className="lg:col-span-3">
+              <ProductSpecifications
+                modelKey={product.modelKey}
+                attributes={product.attributes.map((a) => ({ id: a.id, attributeKey: a.attributeKey, rawValue: a.rawValue, valueText: a.valueText, valueNum: a.valueNum === null ? null : Number(a.valueNum), valueList: a.valueList ?? [], unit: a.unit, confidence: a.confidence, source: a.source }))}
               />
             </PanelSection>
             <PanelSection title="Aliases" className="h-fit">

@@ -4,11 +4,14 @@ import type { Prisma } from "../../generated/prisma/client";
 import type { EvidenceChannel, MatchBasis } from "../../generated/prisma/enums";
 import { diffFields, hasChanges } from "../../lib/diff";
 import { formatMoney } from "../../lib/format";
-import { normalizeName } from "../../lib/normalize";
+import { normalizeCodeOrNull, normalizeName } from "../../lib/normalize";
 import { writeAudit } from "../audit/service";
 import { createEvidence, contentHashOf } from "../evidence/service";
 import { createPriceObservation, createStockObservation, retractObservationsForItem } from "../observations/service";
 import { findMatchCandidates, pickAutoLink } from "../products/matching";
+import { compareAttributes } from "../specs/compare";
+import { extractAttributes, requirementSourceText } from "../specs/extract";
+import { canonicalModelKey } from "../specs/model-key";
 import { productCreateSchema } from "../products/schemas";
 import { addAlias, createProduct } from "../products/service";
 import { assertRequestAcceptsReply, markRequestReplied } from "../sourcing/service";
@@ -50,17 +53,91 @@ function productNameFromItem(fields: { description: string | null; brandText: st
  * Returns null (item stays unlinked, same as today) on a part-number collision or similar, so one bad line never fails the
  * whole save.
  */
-async function autoCreateProduct(c: ServiceContext, fields: { description: string | null; specText: string | null; brandText: string | null; modelText: string | null; partNumber: string | null }) {
-  const name = productNameFromItem(fields);
+async function autoCreateProduct(
+  c: ServiceContext,
+  fields: { description: string | null; specText: string | null; brandText: string | null; modelText: string | null; partNumber: string | null; categoryText?: string | null },
+  options: { asVariant?: boolean } = {},
+) {
+  // A variant of a product that already exists (same model or platform code, different specification): its name says which configuration it is,
+  // and the code goes in the manufacturer SKU, because the part number is unique and belongs to the first product that carried it.
+  const base = productNameFromItem(fields);
+  const name = options.asVariant && fields.specText ? `${base} · ${fields.specText}`.slice(0, PRODUCT_NAME_MAX) : base;
   if (!name) return null;
   const brandKey = fields.brandText?.trim() ? normalizeName(fields.brandText) : null;
   const brand = brandKey ? await c.db.brand.findFirst({ where: { normalizedName: brandKey, status: { not: "ARCHIVED" } }, select: { id: true } }) : null;
+  // The category the parser read (or the reviewer typed), resolved against the live Category list exactly like the brand. Unknown stays unknown.
+  const categoryKey = fields.categoryText?.trim() ? normalizeName(fields.categoryText) : null;
+  const category = categoryKey ? await c.db.category.findFirst({ where: { normalizedName: categoryKey, status: { not: "ARCHIVED" } }, select: { id: true } }) : null;
+  // The part number is unique: a variant keeps its own when it is free, otherwise the shared code goes in the manufacturer SKU.
+  const normalizedPart = normalizeCodeOrNull(fields.partNumber);
+  const partNumberFree = !options.asVariant || !normalizedPart || !(await c.db.product.findUnique({ where: { normalizedPartNumber: normalizedPart }, select: { id: true } }));
   try {
-    return await createProduct(c, productCreateSchema.parse({ name, description: fields.specText?.trim() || null, brandId: brand?.id ?? null, model: fields.modelText, partNumber: fields.partNumber }), { isTemporary: true });
+    return await createProduct(c, productCreateSchema.parse({ name, description: fields.specText?.trim() || null, brandId: brand?.id ?? null, categoryId: category?.id ?? null, model: fields.modelText, partNumber: partNumberFree ? fields.partNumber : null, manufacturerSku: partNumberFree ? null : fields.partNumber }), { isTemporary: true });
   } catch (error) {
     if (error instanceof DomainError) return null; // part-number collision (or a rare validation edge case): a person resolves it via the picker
     throw error;
   }
+}
+
+type ItemForProduct = { description: string | null; specText: string | null; brandText: string | null; modelText: string | null; partNumber: string | null; categoryText?: string | null; sourceText: string };
+type ResolvedProduct = { productId: string | null; matchBasis: MatchBasis | null; autoCreated: boolean; split: boolean };
+
+/**
+ * Which product a broadcast line points at. The matcher's rules are unchanged (part number, model, alias; auto-link only when unambiguous;
+ * auto-create only when there is no candidate at all). One safety is added: when the matched product's KNOWN specifications contradict the
+ * line (a different CPU, RAM, storage or OS), they are different variants and must not share one price history. The line is then linked to
+ * the one sibling variant that agrees with it, or becomes a new temporary variant. A specification missing on either side is never a conflict.
+ */
+async function resolveProductForItem(c: ServiceContext, item: ItemForProduct): Promise<ResolvedProduct> {
+  const candidates = await findMatchCandidates(c.db, { partNumber: item.partNumber, model: item.modelText, brandText: item.brandText, description: item.description });
+  const link = pickAutoLink(candidates);
+
+  if (!link) {
+    // A line with its own part number that no product has, where every candidate is only a model look-alike carrying a DIFFERENT part number, is a
+    // different product (a manufacturer part number identifies one product; a person-recorded alias would have been an ALIAS candidate). It becomes a new
+    // variant. Candidates without a part number of their own, or any alias hit, stay ambiguous: a person chooses.
+    const ownPart = normalizeCodeOrNull(item.partNumber);
+    if (ownPart && candidates.length > 0 && candidates.every((cand) => cand.basis === "MODEL" && cand.partNumber && normalizeCodeOrNull(cand.partNumber) !== ownPart)) {
+      const created = await autoCreateProduct(c, item, { asVariant: true });
+      if (created) return { productId: created.id, matchBasis: "NEW_PRODUCT", autoCreated: true, split: true };
+    }
+    if (candidates.length > 0) return { productId: null, matchBasis: null, autoCreated: false, split: false }; // ambiguous: a person chooses
+    const created = await autoCreateProduct(c, item);
+    return created ? { productId: created.id, matchBasis: "NEW_PRODUCT", autoCreated: true, split: false } : { productId: null, matchBasis: null, autoCreated: false, split: false };
+  }
+
+  const itemAttributes = extractAttributes(requirementSourceText(item));
+  const attributesOf = async (productId: string) =>
+    (await c.db.productAttribute.findMany({ where: { productId, retractedAt: null }, select: { attributeKey: true, valueText: true, valueNum: true, valueList: true } })).map((a) => ({
+      attributeKey: a.attributeKey,
+      valueText: a.valueText,
+      valueNum: a.valueNum === null ? null : Number(a.valueNum),
+      valueList: a.valueList ?? [],
+    }));
+
+  if (compareAttributes(itemAttributes, await attributesOf(link.productId)).conflicts.length === 0) {
+    return { productId: link.productId, matchBasis: link.basis, autoCreated: false, split: false };
+  }
+
+  // The same model or platform code, but a different specification: look for the sibling variant that agrees with this line.
+  const modelKey = canonicalModelKey(item.modelText);
+  const siblings = await c.db.product.findMany({
+    where: {
+      status: { not: "ARCHIVED" },
+      OR: [...(modelKey ? [{ modelKey }] : []), ...(item.partNumber ? [{ manufacturerSku: { equals: item.partNumber, mode: "insensitive" as const } }] : [])],
+    },
+    take: 25,
+    select: { id: true },
+  });
+  const agreeing: string[] = [];
+  for (const sibling of siblings) {
+    const comparison = compareAttributes(itemAttributes, await attributesOf(sibling.id));
+    if (comparison.conflicts.length === 0 && comparison.agreements.length >= 2) agreeing.push(sibling.id);
+  }
+  if (agreeing.length === 1) return { productId: agreeing[0]!, matchBasis: "MODEL", autoCreated: false, split: false };
+
+  const created = agreeing.length === 0 ? await autoCreateProduct(c, item, { asVariant: true }) : null; // several agree: ambiguous, a person chooses
+  return created ? { productId: created.id, matchBasis: "NEW_PRODUCT", autoCreated: true, split: true } : { productId: null, matchBasis: null, autoCreated: false, split: false };
 }
 
 // ───────────────────────────────────────── create ─────────────────────────────────────────
@@ -117,19 +194,12 @@ export async function createBroadcast(
       categoryText: item.categoryText ?? hintCategoryName, // the hint only fills what the parser could not read itself
     }));
     let autoCreatedProducts = 0;
+    let variantSplits = 0;
     for (const item of parsed) {
-      const candidates = await findMatchCandidates(c.db, { partNumber: item.partNumber, model: item.modelText, brandText: item.brandText, description: item.description });
-      const link = pickAutoLink(candidates);
-      let matchBasis: MatchBasis | null = link?.basis ?? null;
-      let productId: string | null = link?.productId ?? null;
-      if (candidates.length === 0) {
-        const created = await autoCreateProduct(c, item);
-        if (created) {
-          productId = created.id;
-          matchBasis = "NEW_PRODUCT";
-          autoCreatedProducts++;
-        }
-      }
+      const resolved = await resolveProductForItem(c, item);
+      const { productId, matchBasis } = resolved;
+      if (resolved.autoCreated) autoCreatedProducts++;
+      if (resolved.split) variantSplits++;
       const { extractedData, confidence, ...fields } = item;
       // The parser's original values are kept write-once in extracted_data, so the evidence view can always show "original vs corrected".
       const original = {
@@ -170,6 +240,7 @@ export async function createBroadcast(
         items: parsed.length,
         parser: `${rulesParser.name} v${rulesParser.version}`,
         ...(autoCreatedProducts ? { autoCreatedProducts } : {}),
+        ...(variantSplits ? { variantSplits } : {}),
         ...(input.supplierRequestId ? { replyToRequest: input.supplierRequestId } : {}),
       },
     });
@@ -245,19 +316,8 @@ export async function addManualItem(ctx: ServiceContext, input: ItemManualCreate
     if (broadcast.archivedAt) throw new InvariantError("This broadcast is archived.");
     const last = await c.db.broadcastItem.aggregate({ where: { broadcastId }, _max: { position: true } });
 
-    const candidates = await findMatchCandidates(c.db, { partNumber: fields.partNumber, model: fields.modelText, brandText: fields.brandText, description: fields.description });
-    const link = pickAutoLink(candidates);
-    let matchBasis: MatchBasis | null = link?.basis ?? null;
-    let productId: string | null = link?.productId ?? null;
-    let autoCreated = false;
-    if (candidates.length === 0) {
-      const created = await autoCreateProduct(c, fields);
-      if (created) {
-        productId = created.id;
-        matchBasis = "NEW_PRODUCT";
-        autoCreated = true;
-      }
-    }
+    const resolved = await resolveProductForItem(c, { ...fields, sourceText: sourceText ?? "(added by hand)" });
+    const { productId, matchBasis, autoCreated } = resolved;
     const item = await c.db.broadcastItem.create({
       data: {
         ...fields,
@@ -356,33 +416,23 @@ export async function backfillAutoCreateProducts(ctx: ServiceContext): Promise<B
   const items = await ctx.db.broadcastItem.findMany({
     where: { reviewStatus: "PENDING", productId: null },
     orderBy: [{ broadcastId: "asc" }, { position: "asc" }],
-    select: { id: true, broadcastId: true, description: true, specText: true, brandText: true, modelText: true, partNumber: true },
+    select: { id: true, broadcastId: true, sourceText: true, description: true, specText: true, brandText: true, modelText: true, partNumber: true, categoryText: true },
   });
 
   const linkedIds: string[] = [];
   for (const item of items) {
     await inTransaction(ctx, async (c) => {
-      const candidates = await findMatchCandidates(c.db, { partNumber: item.partNumber, model: item.modelText, brandText: item.brandText, description: item.description });
-      const link = pickAutoLink(candidates);
-      let productId: string | null = link?.productId ?? null;
-      let matchBasis: MatchBasis | null = link?.basis ?? null;
-      let productName: string | null = link?.name ?? null;
-      if (!link && candidates.length === 0) {
-        const created = await autoCreateProduct(c, item);
-        if (created) {
-          productId = created.id;
-          matchBasis = "NEW_PRODUCT";
-          productName = created.name;
-        }
-      }
-      if (!productId) return; // still ambiguous, or a collision: leave for a person, unchanged
-      await c.db.broadcastItem.update({ where: { id: item.id }, data: { productId, matchBasis } });
+      // The same resolution as at save time, including the variant safety (a line whose specification contradicts the matched product is not linked to it).
+      const resolved = await resolveProductForItem(c, item);
+      if (!resolved.productId) return; // still ambiguous, or a collision: leave for a person, unchanged
+      const product = await c.db.product.findUnique({ where: { id: resolved.productId }, select: { name: true } });
+      await c.db.broadcastItem.update({ where: { id: item.id }, data: { productId: resolved.productId, matchBasis: resolved.matchBasis } });
       await writeAudit(c, {
         action: "broadcast_item.linked",
         entityType: "BroadcastItem",
         entityId: item.id,
         scope: broadcastScope(item.broadcastId),
-        details: { product: { from: null, to: productName }, backfill: true },
+        details: { product: { from: null, to: product?.name ?? null }, backfill: true },
       });
       linkedIds.push(item.id);
     });

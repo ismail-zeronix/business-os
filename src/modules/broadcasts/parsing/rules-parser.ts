@@ -1,6 +1,7 @@
 import type { ExtractionConfidence } from "../../../generated/prisma/enums";
-import { findBarePrice, findBrand, findCategory, findExtras, findMarket, findPartNumber, findPrice, findQuantity, findSpecs, findStockStatus, findTrailingPrice, findVat, findWarranty, type Span } from "./extractors";
-import { HEADER_LINE } from "./header-lines";
+import { findBarePrice, findBrand, findCategory, findExtras, findLeadingCode, findMarket, findPartNumber, findPrice, findQuantity, findSpecs, findStockStatus, findTrailingPrice, findVat, findWarranty, type Span } from "./extractors";
+import { HEADER_LINE, readSignature } from "./header-lines";
+import { readTableRows } from "./table-rows";
 import { toBlocks, toLines, type Line } from "./text";
 import type { BroadcastParser, ParsedItem, ParseContext } from "./types";
 
@@ -10,7 +11,7 @@ import type { BroadcastParser, ParsedItem, ParseContext } from "./types";
  * Deliberately imperfect: reviewers correct it and can add items by hand, so parsing quality never blocks the workflow.
  */
 const PARSER_NAME = "rules";
-const PARSER_VERSION = "4"; // 4 (2026-09-23): category (leading-word + keyword match against the live Category list) and warranty (duration + type) from the real broadcasts already in the database. 3: Lenovo series names kept in the model, "512SSD", curly inch marks, Ultra CPUs, keyboard / bag hints. 2: split prices re-attached, "|" ends the name, resolutions / 802.11 not part numbers, "AI-Ready" is not stock
+const PARSER_VERSION = "6"; // 6 (2026-09-27): spec-rich pipe lines are products without a listed brand, Core Ultra X9 / Core 7 / Snapdragon CPUs, GPU memory is not RAM, colour in the spec text, "x9" is not a quantity, "SUPP :" label. 5 (2026-09-27): a signature block (company, e-mail, phone, contact name) is not a product; "512GBPC" is not 512 GBP; glued "i7147008GB/512GBPC" split; "coming next week" is INCOMING; tower / SFF / AIO give the Desktop category. 4: 4 (2026-09-23): category (leading-word + keyword match against the live Category list) and warranty (duration + type) from the real broadcasts already in the database. 3: Lenovo series names kept in the model, "512SSD", curly inch marks, Ultra CPUs, keyboard / bag hints. 2: split prices re-attached, "|" ends the name, resolutions / 802.11 not part numbers, "AI-Ready" is not stock
 
 const inSpan = (index: number, spans: readonly Span[]) => spans.some((s) => index >= s[0] && index < s[1]);
 
@@ -28,17 +29,34 @@ function hasModelToken(clean: string, brands: readonly string[]): boolean {
   return false;
 }
 
+/**
+ * "Alienware 16 Aurora Gaming | Intel Core 7 | RTX 5050 | 16GB RAM | 512GB SSD": a product name, then at least three spec segments. A first segment that
+ * is a single token ("A38B9ET#BH5 | U5-125U | 16GB | ...") is a detail line under a title, not a product of its own.
+ */
+const SPEC_WORD = /\b(?:core|ryzen|intel|amd|snapdragon|\d+\s?(?:gb|tb))\b/i;
+/** A pipe line that starts with a CPU / size or a bare code ("Intel Core Ultra 9 | 32GB | ..."): the detail of a title above it, never a product of its own. */
+const isPipeDetail = (clean: string) => {
+  const segments = clean.split(/\||,\s/); // pipes, or the commas of a comma-separated spec line
+  const first = (segments[0] as string).trim();
+  return segments.length >= 4 && (SPEC_WORD.test(first) || !/\s/.test(first));
+};
+const isPipeProduct = (clean: string) => clean.split("|").length >= 4 && !isPipeDetail(clean) && findSpecs(clean).snippets.length >= 3;
+
 /** Whether one line looks like a complete product line by itself (used to split a block into several items). */
 function isItemLike(clean: string, brands: readonly string[]): boolean {
   const brand = findBrand(clean, brands) !== null;
   const price = findPrice(clean) !== null;
   const qty = findQuantity(clean) !== null;
   const model = hasModelToken(clean, brands);
+  if (isPipeDetail(clean)) return false;
+  if (findLeadingCode(clean)) return true;
+  // A pipe-separated line ("Alienware 16 Aurora | Core 7 | RTX 5050 | 16GB RAM | 512GB SSD") is a whole product with or without a known brand.
+  if (isPipeProduct(clean)) return true;
   return (brand && model) || ((price || qty) && (brand || model));
 }
 
 function trimPunctuation(value: string): string {
-  return value.replace(/^[\s\-–,;:|/]+|[\s\-–,;:|/]+$/g, "").replace(/\s+/g, " ");
+  return value.replace(/^[\s\-–—,;:|/]+|[\s\-–—,;:|/]+$/g, "").replace(/\s+/g, " ");
 }
 
 /**
@@ -57,7 +75,10 @@ function isTitleOf(title: Line, detail: Line, brands: readonly string[]): boolea
 const MODEL_STOP = /^(?:desktop|laptop|notebook|workstation|tower|twr|sff|tiny|aio|mini|pc)$/i;
 
 /** Lenovo product lines that come right before the size ("THINKBOOK 14 G8"). */
-const MODEL_SERIES = /^(?:thinkbook|thinkpad|ideapad|thinkcentre|thinkstation|legion|yoga|loq)$/i;
+const MODEL_SERIES = /^(?:thinkbook|thinkpad|ideapad|thinkcentre|thinkstation|legion|yoga|loq|omnibook|zenbook|vivobook|expertbook)$/i;
+/** Speed and standard words that follow a networking model: "AC1200", "N300", "4G+", "10/100Mbps". They are specs, not part of the model. */
+const SPEED_WORD = /^(?:(?:ac|ax|be|n)\d{3,5}|\d+g\+?|[\d/]+\s?[mg]bps)$/i;
+
 /** Words without a digit that still belong to a model name: "Gen", "IP3 SLIM", and Lenovo platform codes ("14 G6 IRL", "THINKBOOK14-G8 IAL"). */
 const MODEL_WORD = /^(?:gen|slim|i(?:rl|al|ru|ap|tl|ah|rh)|a(?:bp|rp))$/i;
 
@@ -70,10 +91,12 @@ function modelFrom(words: string[]): string | null {
   const digitAt = parts.findIndex((word) => /\d/.test(word));
   if (digitAt < 0) return null;
   // A Lenovo series word right before the size is part of the name ("THINKBOOK 14 G8", "THINKPAD E16 G3"): it is kept, not dropped.
-  const seriesAt = digitAt > 0 && MODEL_SERIES.test(parts[digitAt - 1] as string) ? digitAt - 1 : digitAt;
+  // ("IdeaPad Slim 3": the series word can sit one word further back, behind "Slim".)
+  const before = (offset: number) => (digitAt >= offset ? (parts[digitAt - offset] as string) : "");
+  const seriesAt = MODEL_SERIES.test(before(1)) ? digitAt - 1 : /^slim$/i.test(before(1)) && MODEL_SERIES.test(before(2)) ? digitAt - 2 : digitAt;
   const model = parts.slice(seriesAt, digitAt + 1);
   for (const word of parts.slice(digitAt + 1, digitAt + 3 + (seriesAt < digitAt ? 1 : 0))) {
-    if (MODEL_STOP.test(word)) break;
+    if (MODEL_STOP.test(word) || SPEED_WORD.test(word)) break;
     if (model.some((m) => m.toLowerCase() === word.toLowerCase())) continue;
     if (!/\d/.test(word) && !MODEL_WORD.test(word)) break;
     model.push(word);
@@ -88,7 +111,7 @@ const collapseRepeats = (text: string) =>
     .filter((word, index, all) => index === 0 || word.toLowerCase() !== (all[index - 1] as string).toLowerCase())
     .join(" ");
 
-function buildItem(lines: Line[], brands: readonly string[], categories: readonly string[], contextBrand: string | null): Omit<ParsedItem, "position"> | null {
+function buildItem(lines: Line[], brands: readonly string[], categories: readonly string[], contextBrand: string | null, listLine = false): Omit<ParsedItem, "position"> | null {
   // Title + detail that names the brand itself: read the detail line (the title adds nothing). Without a brand on the detail line the title is kept.
   const detailOnly = lines.length > 1 && isTitleOf(lines[0] as Line, lines[1] as Line, brands) && findBrand((lines[1] as Line).clean, brands) !== null;
   const flat = (detailOnly ? lines.slice(1) : lines).map((l) => l.clean).join(" ");
@@ -128,7 +151,8 @@ function buildItem(lines: Line[], brands: readonly string[], categories: readonl
     ...(market ? [market.span] : []),
     ...specs.snippets.map((s) => s.span),
   ];
-  const part = findPartNumber(flat, explained);
+  const leading = findLeadingCode(lines[0]?.clean ?? "");
+  const part = leading ?? findPartNumber(flat, explained);
   if (part) {
     reasons.push(part.reason);
     explained.push(part.span);
@@ -140,7 +164,9 @@ function buildItem(lines: Line[], brands: readonly string[], categories: readonl
     const stops = stopSpans.filter((s) => s[0] > start).map((s) => s[0]);
     const end = stops.length ? Math.min(...stops) : flat.length;
     let text = trimPunctuation(flat.slice(start, end));
-    if (text.length < 3) text = trimPunctuation(lines[0]?.clean ?? "").slice(0, 120);
+    const withoutCode = (value: string) => (leading && value.startsWith(leading.value) ? trimPunctuation(value.slice(leading.value.length)) : value);
+    if (start === 0) text = withoutCode(text);
+    if (text.length < 3) text = withoutCode(trimPunctuation(lines[0]?.clean ?? "")).slice(0, 120);
     // A "|" ends the product name once a model-like token has come before it ("Lenovo P16v G3| Intel Core ..."): what follows is spec text.
     const bar = text.indexOf("|");
     if (bar > 0 && /\d/.test(text.slice(0, bar))) text = trimPunctuation(text.slice(0, bar));
@@ -151,11 +177,18 @@ function buildItem(lines: Line[], brands: readonly string[], categories: readonl
   let named = describe(explained);
   // The part number can be the model itself, straight after the brand ("DELL QCT1250 DESKTOP ..."): then the name runs on past it.
   if (!named.model && part) named = describe(explained.filter((span) => span !== part.span));
-  const description = named.text;
+  // A part number that comes right after the name and before any specification belongs to the name ("ASUS TUF A16 FA607NUG GAMING"): otherwise
+  // four different ASUS variants would all be called "ASUS TUF A16".
+  else if (part && !leading && !listLine && part.span[0] > start && part.span[1] <= (lines[0]?.clean.length ?? 0) && !explained.some((span) => span !== part.span && span[0] > start && span[0] < part.span[0])) {
+    named = describe(explained.filter((span) => span !== part.span));
+  }
+  const oneLine = price && !price.bare ? flat.slice(0, price.span[0]).replace(/[@\s]+$/, "") : flat;
+  const description = listLine ? trimPunctuation(part && oneLine.includes(part.value) ? oneLine.replace(part.value, "") : oneLine) : named.text; // a one-line product keeps its whole line as the name ("SANDISK Ultra Go microSD 64GB")
   const modelText = named.model;
 
   const hasIdentity = Boolean(brandText || modelText || part);
-  if (!price && !qty && !(brandText && modelText) && !part) return null; // chatter, not a product line
+  const pipeProduct = lines.length === 1 && isPipeProduct(flat); // a spec-rich pipe line is a product even when its brand is not in the list
+  if (!price && !qty && !(brandText && modelText) && !part && !pipeProduct && !listLine) return null; // chatter, not a product line
 
   const confidence: ExtractionConfidence =
     price && !price.bare && (brandText || part) && (modelText || part) ? "HIGH" : (price || qty) && hasIdentity ? "MEDIUM" : "LOW";
@@ -193,6 +226,35 @@ function itemsFromBlock(block: Line[], brands: readonly string[], categories: re
   const titles = new Set(block.flatMap((line, i) => (i + 1 < block.length && isTitleOf(line, block[i + 1] as Line, brands) ? [i] : [])));
   const likeIndexes = block.map((line, i) => (!titles.has(i) && isItemLike(line.clean, brands) ? i : -1)).filter((i) => i >= 0);
   const startOf = (index: number) => (titles.has(index - 1) ? index - 1 : index);
+
+  // A product heading with one variant per line ("Kingston A400 2.5" Internal SATA SSD" / "240GB - SA400S37/240G" / "480GB - SA400S37/480G"): each
+  // variant line is one product, named by the heading plus its own capacity and code.
+  const VARIANT_LINE = /^(?:\d+(?:\.\d+)?\s?(?:gb|tb|mb))\s*[-–:]\s*[A-Za-z0-9][A-Za-z0-9#/.-]{3,}$/i;
+  const heading = block[0] as Line;
+  if (block.length >= 2 && !VARIANT_LINE.test(heading.clean) && block.slice(1).every((line) => VARIANT_LINE.test(line.clean))) {
+    return block.slice(1).flatMap((line) => buildItem([heading, line], brands, categories, null, true) ?? []);
+  }
+
+  // A plain list: every line names one product on its own and none has a price or quantity to hold it to its neighbours
+  // ("Tp-Link W8961N ADSL2+ Modem Router" / "TD-W9960", "SANDISK Ultra Go microSD 64GB"): one product per line, even when the brand is not in
+  // the list. A line names a product with a model-like token, or with a capacity when it starts with a real word (and is not a comma / pipe
+  // detail line). Blocks of one or two lines need the stricter form: a title and its detail line look alike.
+  const hasCapacity = (line: Line) => /\d\s?(?:gb|tb)\b/i.test(line.clean);
+  const startsWithWord = (line: Line) => /^[A-Za-z]{4,}/.test(line.clean.replace(/^[^A-Za-z]+/, ""));
+  const bare = (line: Line) => !findPrice(line.clean) && !findQuantity(line.clean) && !isPipeDetail(line.clean);
+  const strict = (line: Line) => bare(line) && startsWithWord(line) && (hasModelToken(line.clean, brands) || hasCapacity(line));
+  // A priced list ("My passport 1tb @325+vat" / "Seagate expansion 1tb @295+vat"): every line has its own price, so every line is its own product.
+  const priced = block.length >= 2 && block.every((line) => findPrice(line.clean) !== null && /^[A-Za-z]{2}/.test(line.clean));
+  const unpriced =
+    block.length >= 3
+      ? block.every((line) => bare(line) && (hasModelToken(line.clean, brands) || (startsWithWord(line) && hasCapacity(line))))
+      : block.length === 2
+        ? block.every(strict)
+        : hasCapacity(block[0] as Line) && strict(block[0] as Line);
+  const plain = priced || unpriced;
+  if (plain && !block.some((line) => line.clean.includes("|"))) {
+    return block.flatMap((line) => buildItem([line], brands, categories, null, true) ?? []);
+  }
 
   // Zero or one product-like line: the whole block is one item (e.g. the six-line "Dell 5440 / i7 16/512 / DOS / 25pc ready / 2450+ / UAE").
   if (likeIndexes.length < 2) {
@@ -250,8 +312,15 @@ export const rulesParser: BroadcastParser = {
   version: PARSER_VERSION,
   parse(rawText: string, context: ParseContext): ParsedItem[] {
     // "SUPPLIER : ..." / "CONTACT : ..." lines say who sent it, not what is for sale: they are read as blank lines (line numbers stay).
-    const lines = toLines(rawText).map((line) => (HEADER_LINE.test(line.clean) ? { ...line, clean: "" } : line));
+    const read = toLines(rawText).map((line) => (HEADER_LINE.test(line.clean) ? { ...line, clean: "" } : line));
+    // The sender's signature at the end says who sent it, not what is for sale: it is read as blank lines too (see `readSignature`).
+    const skip = new Set(readSignature(read)?.lineNumbers ?? []);
+    const notSignature = read.map((line) => (skip.has(line.number) ? { ...line, clean: "" } : line));
+    // A spreadsheet price list (a header row names the columns) is read by column; its lines are then not read again as free text.
+    const table = readTableRows(notSignature, context, { parser: PARSER_NAME, version: PARSER_VERSION });
+    const lines = notSignature.map((line) => (table.consumed.has(line.number) ? { ...line, clean: "" } : line));
     const items = attachSplitPrices(toBlocks(lines).flatMap((block) => itemsFromBlock(block, context.brands, context.categories)), lines);
-    return items.map((item, index) => ({ ...item, position: index + 1 }));
+    const all = [...items, ...table.items].sort((a, b) => a.sourceLineStart - b.sourceLineStart);
+    return all.map((item, index) => ({ ...item, position: index + 1 }));
   },
 };

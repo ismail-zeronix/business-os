@@ -22,12 +22,12 @@ export type PriceMatch = { amount: string; currency: string | null; span: Span; 
  * A bare number such as a 4-digit model number is NOT a price. Currency is only reported when it is written.
  */
 export function findPrice(text: string): PriceMatch | null {
-  const before = new RegExp(String.raw`(${CUR})\.?\s*[:=@-]?\s*(${NUM})`, "i").exec(text);
+  const before = new RegExp(String.raw`(?<![A-Za-z])(${CUR})(?![A-Za-z])\.?\s*[:=@-]?\s*(${NUM})`, "i").exec(text);
   if (before && before[1] && before[2]) {
     const amount = parseAmount(before[2]);
     if (amount) return { amount, currency: CURRENCY_CODE[before[1].toUpperCase()] ?? null, span: [before.index, before.index + before[0].length], bare: false, reason: `price "${before[0].trim()}" (currency written before amount)` };
   }
-  const after = new RegExp(String.raw`(${NUM})\s*(${CUR}|/-)`, "i").exec(text);
+  const after = new RegExp(String.raw`(${NUM})\s*(${CUR}|/-)(?![A-Za-z])`, "i").exec(text);
   if (after && after[1] && after[2]) {
     const amount = parseAmount(after[1]);
     if (amount) return { amount, currency: CURRENCY_CODE[after[2].toUpperCase()] ?? null, span: [after.index, after.index + after[0].length], bare: false, reason: `price "${after[0].trim()}" (currency written after amount)` };
@@ -81,7 +81,7 @@ const QTY_PATTERNS: RegExp[] = [
   /\b(\d{1,5})\s*(?:pcs?|pieces?|units?|nos?\.?|sets?)\b/i,
   /\bqty\.?\s*[:=-]?\s*(\d{1,5})\b/i,
   /\b(?:stock|available|avail)\s*[:=-]\s*(\d{1,5})\b/i,
-  /(?:^|\s)[x×]\s*(\d{1,5})\b/i,
+  /(?<!ultra|core|snapdragon|thinkpad|yoga|xps|\d)(?:^|\s)[x×]\s*(\d{1,5})\b(?!\s*(?:elite|plus)\b)/i, // "x 5" is a quantity; "Ultra X9" and "Snapdragon X2 Elite" are CPUs
 ];
 
 export function findQuantity(text: string, priceSpan?: Span): { quantity: number; span: Span; reason: string } | null {
@@ -97,9 +97,9 @@ export function findQuantity(text: string, priceSpan?: Span): { quantity: number
 
 const STOCK_RULES: { status: StockStatus; pattern: RegExp }[] = [
   { status: "OUT_OF_STOCK", pattern: /\b(?:out\s*of\s*stock|oos|sold\s*out|not\s*available)\b/i },
-  { status: "INCOMING", pattern: /\b(?:incoming|eta|arriving|in\s*transit|expected|on\s*the\s*way)\b/i },
+  { status: "INCOMING", pattern: /\b(?:incoming|upcoming|eta|arriving|in\s*transit|expected|on\s*the\s*way|coming\s+(?:soon|next\s+week|this\s+week|next\s+month|in\s+\d+\s+\w+))\b/i },
   { status: "ON_REQUEST", pattern: /\b(?:on\s*request|on\s*order|to\s*order|back\s*order)\b/i },
-  { status: "LIMITED", pattern: /\b(?:limited|last\s*(?:few|pcs|units)|few\s*(?:pcs|units))\b/i },
+  { status: "LIMITED", pattern: /\b(?:limited|last\s*(?:few|\d+)?\s*(?:pcs|pieces|units)|few\s*(?:pcs|units))\b/i },
   // "ready" is stock only on its own ("25pc ready"); "AI-Ready" / "AI Ready" describes a laptop's NPU, not availability.
   { status: "IN_STOCK", pattern: /\b(?:in\s*stock|instock|(?<!-)(?<!\bai\s)ready(?:\s*stock)?|uae\s*stock|local\s*stock)\b/i },
   { status: "AVAILABLE", pattern: /\b(?:available|avail)\b/i },
@@ -115,12 +115,17 @@ export function findStockStatus(text: string): { status: StockStatus; span: Span
 }
 
 const SPEC_PATTERNS: RegExp[] = [
-  /\b(?:core\s*)?ultra[\s-]*[3579][\s-]*\d{3}[A-Z]{0,2}\b/gi, // "Ultra 7 255H", "ULTRA7-255H", "ULTRA 5-225U", "ULTRA-7 256V"
+  /\b(?:intel\s*)?(?:core\s*)?ultra[\s-]*(?:[3579]|x[3579])(?!\w)(?:[\s-]*\d{3}[A-Z]{0,2}\b)?/gi, // "Ultra 7 255H", "ULTRA7-255H", "ULTRA-7 256V", "Core Ultra 5" (tier only), "Core Ultra X9"
+  /\b(?:intel\s*)?core\s*[3579](?!\d)(?:[\s-]*\d{3}[A-Z]{1,2}\b)?/gi, // "Core 5-120U", "Intel Core 7", "Core 5 210H"
   /\bU[3579][-\s]*\d{3}[A-Z]{0,2}\b/gi, // Core Ultra shorthand in supplier lists: "U5 235", "U7-265", "U7 -265T"
-  /\bi[3579][-\s]*\d{4,5}(?:G\d|[A-Z]{1,2})?\b/gi, // "i7-1355U", "I5-1135G7", and "I7- 12700" with the space some lists leave after the hyphen
-  /\bi[3579]\b/gi,
-  /\bryzen\s*[3579](?:\s*\d{4}[A-Z]{0,2})?\b/gi,
-  /\b(?:xeon|celeron|pentium|snapdragon)[\w-]*/gi,
+  /\b(?:intel\s*)?(?:core\s*)?i[3579][-\s]*\d{4,5}(?:G\d|[A-Z]{1,2})?\b/gi, // "i7-1355U", "I5-1135G7", and "I7- 12700" with the space some lists leave after the hyphen
+  /\b(?:intel\s*)?(?:core\s*)?i[3579]\b/gi,
+  /\b(?:amd\s+)?ryzen\s*(?:ai\s*)?[3579](?:\s*-?\s*\d{2,4}[A-Z]{0,2})?\b/gi, // "Ryzen 7 7735HS", "AMD Ryzen 5 - 40"
+  /\b(?:qualcomm\s*)?snapdragon(?:\s*x\d?(?:\s*(?:elite|plus))?)?/gi, // "Snapdragon X2 Elite"
+  /\bm[1-9](?:\s*(?:pro|max|ultra))?\b(?!\s*(?:nvme|ssd|sata|pcie|slot|\.2))/gi, // Apple chips: "M5", "M5 Pro", "M5 MAX"
+  /\b\d{1,2}\s?-?\s?(?:core\s+)?CPU\s*\/\s*\d{1,2}\s?-?\s?(?:core\s+)?GPU\b/gi, // "18 CPU / 40 GPU" (Apple core counts)
+  /\b(?:xeon|celeron|pentium)[\w-]*/gi,
+  /\b(?:rtx|gtx)\s*\d{3,4}\w*(?:\s+\d{1,2}\s?gb(?:\s*gddr\d\w*)?)?/gi, // GPU with its own memory ("RTX 5050 8GB GDDR7"): that 8GB is not RAM, so this comes before the capacity patterns
   /\b(?:8|12|16|24|32|48|64|96|128|256)\s*\/\s*\d{2,4}(?:\s?(?:gb|tb))?\b/gi,
   /\b\d{1,4}\s?(?:gb|tb)(?:\s?(?:ssd|hdd|nvme|ddr[345]|lpddr[45]))?\b/gi,
   /\b\d{2,4}\s?(?:ssd|hdd|nvme)\b/gi, // capacity glued to the drive type, no unit written: "512SSD", "256 SSD" (kept as written; the unit is not assumed)
@@ -129,7 +134,7 @@ const SPEC_PATTERNS: RegExp[] = [
   /\b(?:fhd|qhd|uhd|wuxga|wqhd|4k|oled|touch(?:screen)?)\b/gi,
   /\b(?:backlit(?:e|ed)?|bklt)\b/gi, // keyboard type
   /\+\s*(?:carry(?:ing)?\s*)?bag\b/gi, // "DOS+BAG": a bag included in the box
-  /\b(?:rtx|gtx)\s*\d{3,4}\w*/gi,
+  /\b(?:cool\s+silver|glacier\s+silver|space\s+(?:black|gr[ae]y)|sky\s+blue|starlight|graphite|platinum|silver|black|grey|gray|blue|white|midnight)\b/gi, // colour: the only thing that tells two otherwise identical lines apart
   /\b(?:free\s?dos|dos|no\s?os|win(?:dows)?\s?(?:7|8|10|11)?(?:\s?(?:pro|home))?|w1[01](?:\s?(?:pro|home))?|ubuntu|linux|chrome\s?os)\b/gi,
 ];
 
@@ -184,7 +189,7 @@ export function findBrand(text: string, brands: readonly string[]): { name: stri
 const CATEGORY_KEYWORDS: { pattern: RegExp; name: string }[] = [
   { pattern: /\b(?:lap|laptop|notebook)\b/i, name: "laptop" },
   { pattern: /\bmonitor\b/i, name: "monitor" },
-  { pattern: /\bdesk(?:top)?\b/i, name: "desktop" },
+  { pattern: /\bdesk(?:top)?\b|\b(?:tower|twr|sff|aio|all[\s-]in[\s-]one)\b/i, name: "desktop" },
   { pattern: /\bserver\b/i, name: "server" },
   { pattern: /\bworkstation\b/i, name: "workstation" },
   { pattern: /\bprinter\b/i, name: "printer" },
@@ -245,8 +250,10 @@ const WARRANTY_TYPE_RULES: { pattern: RegExp; type: "ON_SITE" | "CARRY_IN" | "RE
 export function findWarranty(text: string): { months: number | null; monthsReason: string | null; type: "ON_SITE" | "CARRY_IN" | "RETURN_TO_BASE" | "NBD" | null; typeReason: string | null } {
   const durationMatch = WARRANTY_DURATION.exec(text);
   const years = durationMatch?.[1] ? Number(durationMatch[1]) : null;
-  const months = years && years > 0 ? years * 12 : null;
-  const monthsReason = months ? `warranty "${durationMatch![0].trim()}" (${years} year${years === 1 ? "" : "s"})` : null;
+  // "11 Months Premier Onsite Support Warranty": months count only when the word warranty is there too ("3 months" of anything else is not one).
+  const monthsMatch = !years && /\bwarranty\b/i.test(text) ? /\b(\d{1,2})\s*-?\s*months?\b/i.exec(text) : null;
+  const months = years && years > 0 ? years * 12 : monthsMatch?.[1] ? Number(monthsMatch[1]) : null;
+  const monthsReason = months ? (years ? `warranty "${durationMatch![0].trim()}" (${years} year${years === 1 ? "" : "s"})` : `warranty "${monthsMatch![0].trim()}" (${months} months)`) : null;
 
   const typeHit = WARRANTY_TYPE_RULES.find((rule) => rule.pattern.test(text));
   const type = typeHit?.type ?? null;
@@ -259,7 +266,7 @@ export function findWarranty(text: string): { months: number | null; monthsReaso
  * Letters-and-digits tokens that are specs, not part numbers: a screen resolution (1920x1200), an IEEE standard (802.11be), a memory layout
  * (2x16GB), a Lenovo series name with its size ("THINKBOOK14-G8", "THINKBOOK-16"), or any number with a unit (400nits, 5.4GHz, 140W, 90Wh, 13TOPS).
  */
-const NOT_A_PART_NUMBER = /^(?:(?:thinkbook|thinkpad|ideapad|thinkcentre|thinkstation)-?\d[a-z0-9-]*|\d{3,4}\s?[x×]\s?\d{3,4}|802\.\d+[a-z]*|\d+\s?[x×]\s?\d+\s?(?:gb|tb|mb)|\d+(?:\.\d+)?\s?(?:nits|[kmg]?hz|wh?|mah|tops|mp|kg|mm|cm|gbps|mbps|gb|tb|mb|v|a))$/i;
+const NOT_A_PART_NUMBER = /^(?:[rw]?\d+\s?mb\/?s|(?:lp)?ddr\d\w*(?:-[\w/]+)?|(?:ac|ax|be|n)\d{3,5}|(?:thinkbook|thinkpad|ideapad|thinkcentre|thinkstation)-?\d[a-z0-9-]*|\d{3,4}\s?[x×]\s?\d{3,4}|802\.\d+[a-z]*|\d+\s?[x×]\s?\d+\s?(?:gb|tb|mb)|\d+(?:\.\d+)?\s?(?:nits|[kmg]?hz|wh?|mah|tops|mp|kg|mm|cm|gbps|mbps|gb|tb|mb|v|a))$/i;
 
 /**
  * A manufacturer part number candidate: an alphanumeric token with both letters and digits, at least 6 characters, that is not already
@@ -279,4 +286,16 @@ export function findPartNumber(text: string, excluded: readonly Span[]): { value
   candidates.sort((a, b) => b.value.replace(/[^A-Za-z0-9]/g, "").length - a.value.replace(/[^A-Za-z0-9]/g, "").length);
   const best = candidates[0];
   return best ? { ...best, reason: `part number candidate "${best.value}"` } : null;
+}
+
+/**
+ * A code at the very start of a line that also carries a memory or storage size: "MDH74 MACBOOK AIR 13" 16GB/512GB SILVER", "Z1MZ00029 — CTO MBP ...".
+ * Apple part numbers are five characters, shorter than `findPartNumber` accepts, and lists put them first. Only a candidate: a person confirms it.
+ */
+export function findLeadingCode(line: string): { value: string; span: Span; reason: string } | null {
+  const match = /^([A-Z0-9]{5,12})(?=\s+[^\s|])/i.exec(line);
+  const code = match?.[1];
+  if (!code || !/\d/.test(code) || !/[A-Za-z]/.test(code) || /^\d+(?:gb|tb|mb)/i.test(code)) return null;
+  if (!/\d\s?(?:gb|tb)\b/i.test(line)) return null;
+  return { value: code, span: [0, code.length], reason: `part number candidate "${code}" (the code that starts the line)` };
 }

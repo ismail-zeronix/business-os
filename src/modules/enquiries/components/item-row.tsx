@@ -2,7 +2,6 @@ import Link from "next/link";
 import { KeyValue } from "@/components/application/key-value";
 import { ConfidenceBadge, MatchBadge, ReviewStatusBadge } from "@/components/application/status-badges";
 import type { SelectOption } from "@/components/forms/multi-select";
-import { Badge } from "@/components/ui/badge";
 import { formatQuantity } from "@/lib/format";
 import { normalizeName } from "@/lib/normalize";
 import { cn } from "@/lib/utils";
@@ -10,14 +9,13 @@ import type { MatchCandidate } from "@/modules/products/matching";
 import type { ItemIntelligence } from "../intelligence";
 import type { EnquiryDetail } from "../queries";
 import { IntelligencePanel } from "./intelligence-panel";
+import { RequirementsPanel, type RequirementView } from "./requirements-panel";
 import { EnquiryItemEditor } from "./item-editor";
 import { ReopenControl } from "./item-controls";
 import { EnquiryProductLinker } from "./product-linker";
 import { Card } from "@/components/ui/card";
 
 type Item = EnquiryDetail["items"][number];
-
-const HINT_LABEL: Record<string, string> = { cpu: "CPU", ram: "RAM", storage: "Storage", os: "OS", ramStorage: "RAM/Storage" };
 
 /**
  * One requirement. Collapsed it is a single line (description, quantity, match, status). Selected (`?item=`) it expands in place:
@@ -47,12 +45,25 @@ export function EnquiryItemRow({
   intelligence: ItemIntelligence | null;
   evidenceHref: (observationId: string) => string;
 }) {
-  const data = item.extractedData as { reasons?: string[]; hints?: Record<string, string> } | null;
+  const data = item.extractedData as { reasons?: string[] } | null;
   const reasons = (data?.reasons ?? []).filter(Boolean);
-  const hints = Object.entries(data?.hints ?? {}).filter(([, value]) => Boolean(value));
   const wording = item.description ?? [item.brandText, item.modelText].filter(Boolean).join(" ");
   const brandId = item.brandText ? (brandOptions.find((b) => normalizeName(b.label) === normalizeName(item.brandText ?? ""))?.value ?? null) : null;
   const quantity = formatQuantity(item.quantity);
+  const requirements: RequirementView[] = item.requirements.map((r) => ({
+    id: r.id,
+    attributeKey: r.attributeKey,
+    operator: r.operator,
+    importance: r.importance,
+    rawValue: r.rawValue,
+    valueText: r.valueText,
+    valueNum: r.valueNum === null ? null : Number(r.valueNum),
+    valueNumMax: r.valueNumMax === null ? null : Number(r.valueNumMax),
+    valueList: r.valueList ?? [],
+    unit: r.unit,
+    confidence: r.confidence,
+    source: r.source,
+  }));
 
   return (
     <li>
@@ -102,16 +113,7 @@ export function EnquiryItemRow({
                   notes: item.notes,
                 }}
               />
-              {hints.length ? (
-                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                  <span>Detected:</span>
-                  {hints.map(([key, value]) => (
-                    <Badge key={key} variant="outline">
-                      {HINT_LABEL[key] ?? key}: {value}
-                    </Badge>
-                  ))}
-                </div>
-              ) : null}
+              <RequirementsPanel itemId={item.id} requirements={requirements} editable />
               {reasons.length || item.extractionConfidence ? (
                 <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer select-none">
@@ -136,6 +138,7 @@ export function EnquiryItemRow({
                   { label: item.reviewStatus === "IGNORED" ? "Ignored because" : "Notes", value: item.reviewStatus === "IGNORED" ? item.ignoredReason : item.notes },
                 ]}
               />
+              <RequirementsPanel itemId={item.id} requirements={requirements} editable={false} />
               <div className="flex justify-end border-t pt-2">
                 <ReopenControl itemId={item.id} />
               </div>

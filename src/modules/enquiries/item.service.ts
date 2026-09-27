@@ -6,6 +6,7 @@ import { findMatchCandidates, pickAutoLink } from "../products/matching";
 import { productCreateSchema } from "../products/schemas";
 import { addAlias, createProduct } from "../products/service";
 import type { EnquiryItemCreateProductInput, EnquiryItemLinkInput, EnquiryItemManualCreateInput, EnquiryItemReasonInput, EnquiryItemUpdateInput } from "./schemas";
+import { createParsedRequirements, proposeRequirementsForItem } from "./requirement.service";
 import { enquiryScope, requireNotArchived, touchEnquiry } from "./shared";
 
 /**
@@ -63,7 +64,8 @@ export async function addManualEnquiryItem(ctx: ServiceContext, input: EnquiryIt
         matchBasis: link?.basis ?? null,
       },
     });
-    await writeAudit(c, { action: "enquiry_item.created", entityType: "EnquiryItem", entityId: item.id, scope: enquiryScope(enquiryId), details: { description: item.description } });
+    const requirements = await createParsedRequirements(c, item.id, proposeRequirementsForItem(item));
+    await writeAudit(c, { action: "enquiry_item.created", entityType: "EnquiryItem", entityId: item.id, scope: enquiryScope(enquiryId), details: { description: item.description, ...(requirements ? { requirements } : {}) } });
     await touchEnquiry(c, enquiryId);
     return item;
   });

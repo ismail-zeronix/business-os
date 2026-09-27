@@ -5,6 +5,8 @@ import type { AliasSource } from "../../generated/prisma/enums";
 import { diffFields } from "../../lib/diff";
 import { normalizeCode, normalizeCodeOrNull } from "../../lib/normalize";
 import { writeAudit } from "../audit/service";
+import { canonicalModelKey } from "../specs/model-key";
+import { createParsedProductAttributes, proposeProductAttributes } from "./attributes.service";
 import { DuplicateProductError } from "./errors";
 import type { AliasAddInput, AliasRemoveInput, ProductCreateInput, ProductStatusInput, ProductUpdateInput } from "./schemas";
 
@@ -41,8 +43,10 @@ export async function createProduct(ctx: ServiceContext, input: ProductCreateInp
       if (normalizedPartNumber && input.partNumber) await assertPartNumberFree(c, normalizedPartNumber, input.partNumber);
 
       const product = await c.db.product.create({
-        data: { ...input, normalizedPartNumber, normalizedModel: normalizeCodeOrNull(input.model), isTemporary: options.isTemporary ?? false },
+        data: { ...input, normalizedPartNumber, normalizedModel: normalizeCodeOrNull(input.model), modelKey: canonicalModelKey(input.model), isTemporary: options.isTemporary ?? false },
       });
+      // Specifications the name and description state (RAM, CPU, ...), proposed as structured values. Unknown stays unknown.
+      const attributes = await createParsedProductAttributes(c, product.id, proposeProductAttributes(product));
       await writeAudit(c, {
         action: "product.created",
         entityType: "Product",
@@ -53,6 +57,7 @@ export async function createProduct(ctx: ServiceContext, input: ProductCreateInp
           category: names.categoryName,
           partNumber: product.partNumber,
           temporary: product.isTemporary,
+          ...(attributes ? { specifications: attributes } : {}),
         },
       });
       return product;
@@ -82,7 +87,7 @@ export async function updateProduct(ctx: ServiceContext, input: ProductUpdateInp
 
       const updated = await c.db.product.update({
         where: { id },
-        data: { ...profile, brandId, categoryId, normalizedPartNumber, normalizedModel: normalizeCodeOrNull(profile.model), isTemporary: needsCuration },
+        data: { ...profile, brandId, categoryId, normalizedPartNumber, normalizedModel: normalizeCodeOrNull(profile.model), modelKey: canonicalModelKey(profile.model), isTemporary: needsCuration },
       });
       await writeAudit(c, { action: "product.updated", entityType: "Product", entityId: id, details });
       return updated;

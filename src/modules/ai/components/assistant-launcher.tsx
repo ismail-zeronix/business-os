@@ -25,7 +25,7 @@ export function AssistantLauncher() {
         onClick={() => setOpen(true)}
         aria-label="Open the assistant"
         title="Assistant"
-        className="fixed right-6 bottom-6 z-40 flex size-11 items-center justify-center rounded-full border bg-surface text-foreground shadow-md transition-colors outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="fixed right-10 bottom-6 z-40 flex size-11 items-center justify-center rounded-full border bg-surface text-foreground shadow-md transition-colors outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         <Bot className="size-5" strokeWidth={1.5} aria-hidden />
         {dot ? <span aria-hidden className={cn("absolute top-0.5 right-0.5 size-2.5 rounded-full ring-2 ring-surface", dot)} /> : null}

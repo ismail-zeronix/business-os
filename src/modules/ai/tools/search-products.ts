@@ -5,6 +5,7 @@ import type { RecordStatus } from "../../../generated/prisma/enums";
 import { getProductIntelligence, type StockValue, type VatValue } from "../../observations/procurement-queries";
 import type { MatchCandidate } from "../../products/matching";
 import { searchProcurement } from "../../search/queries";
+import { describeAttributes } from "../../specs/format";
 import type { AIToolDefinition } from "./types";
 
 /**
@@ -30,6 +31,8 @@ export type ProductHit = {
   status: RecordStatus;
   /** How the product was found: an exact matcher hit, the product open on the page, or only words of its name. */
   match: Pick<MatchCandidate, "basis" | "strength"> | { basis: "PAGE"; strength: "EXACT" } | null;
+  /** What the product states about itself ("RAM: 16 GB"), read from its name by the parser. Empty when nothing is known: unknown stays unknown. */
+  specifications: string[];
   offers: OfferFact[];
 };
 
@@ -58,7 +61,7 @@ export const searchProductsTool: AIToolDefinition<SearchProductsInput, ProductSe
   async execute(input, ctx) {
     const costVisible = hasCapability(ctx.actor, "supplier.cost.read");
 
-    let hits: Omit<ProductHit, "offers">[] = [];
+    let hits: Omit<ProductHit, "offers" | "specifications">[] = [];
     let supplierRows = new Map<string, Awaited<ReturnType<typeof getProductIntelligence>>>();
     let total = 0;
 
@@ -86,8 +89,18 @@ export const searchProductsTool: AIToolDefinition<SearchProductsInput, ProductSe
     ]);
     const evidenceOf = new Map([...prices, ...stocks].map((o) => [o.id, o.evidenceSourceId]));
 
+    const attributeRows = hits.length
+      ? await db.productAttribute.findMany({
+          where: { productId: { in: hits.map((h) => h.productId) }, retractedAt: null },
+          select: { productId: true, attributeKey: true, valueText: true, valueNum: true, valueList: true, unit: true },
+        })
+      : [];
+    const specificationsOf = (productId: string) =>
+      describeAttributes(attributeRows.filter((a) => a.productId === productId).map((a) => ({ attributeKey: a.attributeKey, valueText: a.valueText, valueNum: a.valueNum === null ? null : Number(a.valueNum), valueList: a.valueList ?? [], unit: a.unit })));
+
     const products: ProductHit[] = hits.map((hit) => ({
       ...hit,
+      specifications: specificationsOf(hit.productId),
       offers: (supplierRows.get(hit.productId) ?? []).flatMap((s): OfferFact[] => {
         const priceEvidence = s.price ? evidenceOf.get(s.price.id) : undefined;
         const stockEvidence = s.stock ? evidenceOf.get(s.stock.id) : undefined;

@@ -15,6 +15,8 @@ import {
   setEnquiryItemProduct,
   updateEnquiryItem,
 } from "./item.service";
+import { addRequirement, reextractRequirements, replaceRequirement, retractRequirement } from "./requirement.service";
+import { requirementAddSchema, requirementReextractSchema, requirementReplaceSchema, requirementRetractSchema } from "./requirement.schemas";
 import {
   customerFromRequesterSchema,
   enquiryArchiveSchema,
@@ -210,5 +212,52 @@ export async function addManualEnquiryItemAction(_prev: IdResult | null, formDat
       return { id: item.id };
     },
     { successMessage: "Requirement added", formData },
+  );
+}
+
+// ───────────────────────────────────── specification requirements ─────────────────────────────────────
+
+export async function addRequirementAction(_prev: IdResult | null, formData: FormData): Promise<IdResult> {
+  return runAction(
+    async () => {
+      const result = await addRequirement(await getServiceContext(), requirementAddSchema.parse(formDataToObject(formData)));
+      refreshEnquiry(result.enquiryId);
+      return { id: result.id };
+    },
+    { successMessage: "Specification added", formData },
+  );
+}
+
+export async function replaceRequirementAction(_prev: IdResult | null, formData: FormData): Promise<IdResult> {
+  return runAction(
+    async () => {
+      const result = await replaceRequirement(await getServiceContext(), requirementReplaceSchema.parse(formDataToObject(formData)));
+      refreshEnquiry(result.enquiryId);
+      return { id: result.id };
+    },
+    { successMessage: "Specification saved", formData },
+  );
+}
+
+export async function retractRequirementAction(_prev: IdResult | null, formData: FormData): Promise<IdResult> {
+  return runAction(
+    async () => {
+      const result = await retractRequirement(await getServiceContext(), requirementRetractSchema.parse(formDataToObject(formData)));
+      refreshEnquiry(result.enquiryId);
+      return { id: result.id };
+    },
+    { successMessage: "Specification removed", formData },
+  );
+}
+
+export async function reextractRequirementsAction(_prev: IdResult | null, formData: FormData): Promise<IdResult> {
+  return runAction(
+    async () => {
+      const input = requirementReextractSchema.parse(formDataToObject(formData));
+      const result = await reextractRequirements(await getServiceContext(), input);
+      refreshEnquiry(result.enquiryId);
+      return { id: input.itemId };
+    },
+    { successMessage: "Specifications read again", formData },
   );
 }

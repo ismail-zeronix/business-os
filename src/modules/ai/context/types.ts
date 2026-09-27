@@ -19,6 +19,8 @@ export type PackageProduct = {
   isTemporary: boolean;
   /** How it was found, in words: "exact part-number match", "words in the name only"... */
   matchLabel: string;
+  /** "RAM: 16 GB" phrases read from the product's own text by the parser; empty when none is known. */
+  specifications: string[];
 };
 
 export type PackageSupplier = { ref: string; id: string; name: string };

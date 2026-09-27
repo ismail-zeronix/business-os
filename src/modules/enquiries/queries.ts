@@ -166,7 +166,11 @@ export async function getEnquiry(id: string) {
       email: { select: { id: true, rawSize: true, rawSource: false } },
       items: {
         orderBy: { position: "asc" },
-        include: { product: { select: { id: true, name: true, partNumber: true, status: true, brandId: true, brand: { select: { name: true } } } } },
+        include: {
+          product: { select: { id: true, name: true, partNumber: true, status: true, brandId: true, brand: { select: { name: true } } } },
+          // Only the requirements in force; the parser's replaced values stay in the database and in the Activity tab.
+          requirements: { where: { retractedAt: null }, orderBy: { createdAt: "asc" } },
+        },
       },
       _count: { select: { supplierRequests: true } },
     },

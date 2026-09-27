@@ -411,3 +411,33 @@ Migration `20260923004256_broadcast_category_warranty`. Additive: one enum (`War
 **Guards.** CHECK `broadcast_items_warranty_months_positive`, `price_observations_warranty_months_positive`: NULL or `> 0`.
 
 **Deliberate choices.** No `UNKNOWN` member on `WarrantyType` (unlike `VatState`/`StockStatus`) — warranty is frequently just absent rather than always applicable, so NULL already means "not stated" without a redundant enum value. `Monitor` was added as a new `Category` row (not a schema change) through the existing `createCategory` service, filling a real gap: 17 of 214 real broadcast items are monitors with no prior matching category.
+
+## 18. Enquiry specification requirements (2026-09-27)
+
+Migration `20260927100000_enquiry_requirements`. Additive: three enums (`RequirementOperator`, `RequirementImportance`, `RequirementSource`) and one table, `enquiry_requirements`. Nothing existing altered. Plan: `docs/plans/active/CURRENT.md` ("Structured requirements"). Module: `docs/modules/ENQUIRIES.md`.
+
+`EnquiryItem` keeps its identity fields (brand, family, model, part number, quantity) and its raw `spec_text`. The variant-varying specifications (CPU, RAM, storage, screen, resolution, OS, keyboard language, ...) are typed rows here, so they can be compared and queried instead of read from one string.
+
+| Column | Notes |
+|---|---|
+| `enquiry_item_id` | FK, Restrict. |
+| `attribute_key` | Text, validated against the code registry `src/modules/specs/registry.ts` (not a database table: definitions change with the software that reads them). CHECK `^[a-z][a-z0-9_]*$`. |
+| `operator`, `importance` | `EQUALS`, `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL`, `IN`, `BETWEEN`, `CONTAINS`; `MUST`, `SHOULD`, `NICE`. "Preferred" is an importance, not an operator. |
+| `raw_value` | The words as written ("512GB SSD"). With the item's `source_text` and line range it traces every value back to the immutable evidence. |
+| `value_text`, `value_num`, `value_num_max`, `value_list` | Typed value columns, no JSON. CHECK `enquiry_requirements_value_shape`: exactly the columns the operator needs (EQUALS text or number, >= / <= number, BETWEEN number and upper number, IN list, CONTAINS text). Numbers are canonical (GB, inches). CPU text is a canonical string such as `intel/core-ultra/7/256V`. |
+| `confidence` | Reuses `ExtractionConfidence`. |
+| `source` | `PARSER`, `AI`, `HUMAN`. |
+| `created_by_id`, `created_at`, `retracted_*` | Who triggered the write. Retraction columns are all-or-none (CHECK). |
+
+**Guards.** Partial unique index `enquiry_requirements_one_active_per_key` (`enquiry_item_id`, `attribute_key`) where not retracted: one requirement in force per attribute. `guard_enquiry_requirement()` refuses DELETE and any UPDATE except the retraction columns. A person's edit therefore retracts the active row and inserts a `HUMAN` row: the parser's value stays in history and the human value is the one in force.
+
+## 19. Product attributes and model key (2026-09-27)
+
+Migration `20260927140000_product_attributes`. Additive: table `product_attributes` and nullable `products.model_key` (indexed, not unique). `Product` keeps acting as the sellable variant (no `product_variants` table); the model key groups the variants of one model.
+
+`product_attributes` is the counterpart of `enquiry_requirements` (section 18): what a product IS. Same registry (`src/modules/specs/registry.ts`), same typed value columns (no JSON), same append-only pattern. Columns: `product_id`, `attribute_key`, `raw_value`, `value_text` / `value_num` / `value_list` (CHECK: exactly one is set), `unit`, `confidence`, `source` (reuses `RequirementSource`), `source_broadcast_item_id` (provenance, nullable), `created_*`, `retracted_*`. Partial unique index: one active value per product and key. `guard_product_attribute()` refuses DELETE and any UPDATE except retraction. A missing row means the specification is UNKNOWN, never assumed.
+
+`model_key` (`specs/model-key.ts`): "E14 Gen 7" and "E14 G7" both give `E14G7`; CPU and capacity words that leaked into model text are removed. Written by `createProduct` / `updateProduct`. It is a grouping aid, not an identity: model text that includes the family ("ThinkPad E14 Gen 7") keys differently from one without it.
+
+Written by: `createProduct` reads the name and description (`products/attributes.service.ts`) when a product is created; `scripts/backfill-product-specs.ts` does it once for existing products (dry run by default).
+

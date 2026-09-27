@@ -20,6 +20,7 @@ export function renderPackage(pkg: EvidencePackage, now: Date): string {
         p.brandName ? `brand ${p.brandName}` : null,
         p.categoryName ? `category ${p.categoryName}` : null,
         p.matchLabel,
+        p.specifications.length ? `specifications read from its name (not verified): ${p.specifications.join("; ")}` : null,
         p.isTemporary ? "TEMPORARY product, details not verified" : null,
       ].filter(Boolean);
       lines.push(`${p.ref}  ${p.name} | ${facts.join(" | ")}`);

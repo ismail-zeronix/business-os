@@ -27,6 +27,9 @@
 
 Fuzzy and LLM-assisted matching are later layers and are not built now. The function returns ranked candidates with the basis; it never confirms anything.
 
+## Structured specifications (built 2026-09-27)
+`product_attributes` holds what a product IS (CPU, RAM, storage, storage type, screen size, resolution, OS, keyboard language) as typed, canonical values read from its name and description by `src/modules/specs` (the same reader that reads customer requirements, so "16GB" means the same on both sides). A specification with no row is UNKNOWN. `products.model_key` groups variants of one model ("E14 Gen 7" = "E14 G7"). Both are written when a product is created (`createProduct`) and shown read-only on the product page ("Specifications"). Auto-created products from broadcasts now also get their category, resolved from the line's category text. Existing products are caught up with `npm run specs:backfill` (dry run first). Matching does not use these yet (next phase); `Product` remains the sellable variant, no separate variant table.
+
 ## Search (`products/queries.ts`)
 The query is split into tokens. Every token must match at least one of: name, brand name, category name, family, normalised model, normalised part number, manufacturer SKU, normalised alias. Code-like tokens are normalised first, so `83a100-suak` finds `83A100SUAK`. Server-side pagination; brand/category/temporary/status filters. Case-insensitive `ILIKE` at this scale; trigram/full-text indexes are a later optimisation.
 

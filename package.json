@@ -21,7 +21,8 @@
     "db:seed": "prisma db seed",
     "db:backup": "tsx scripts/db-backup.ts",
     "db:restore": "tsx scripts/db-restore.ts",
-    "mail:sync": "tsx scripts/mail-sync.ts"
+    "mail:sync": "tsx scripts/mail-sync.ts",
+    "specs:backfill": "tsx scripts/backfill-product-specs.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

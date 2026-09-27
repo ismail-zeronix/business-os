@@ -160,6 +160,10 @@ model User {
   enquiriesCreated           Enquiry[]             @relation("EnquiryCreatedBy")
   enquiriesAssigned          Enquiry[]             @relation("EnquiryAssignedTo")
   enquiryItemsConfirmed      EnquiryItem[]         @relation("EnquiryItemConfirmedBy")
+  requirementsCreated        EnquiryRequirement[]  @relation("RequirementCreatedBy")
+  requirementsRetracted      EnquiryRequirement[]  @relation("RequirementRetractedBy")
+  attributesCreated          ProductAttribute[]    @relation("ProductAttributeCreatedBy")
+  attributesRetracted        ProductAttribute[]    @relation("ProductAttributeRetractedBy")
   emailAccountsCreated       EmailAccount[]        @relation("EmailAccountCreatedBy")
   emailMessagesDismissed     EmailMessage[]        @relation("EmailDismissedBy")
   supplierRequestsCreated    SupplierRequest[]     @relation("SupplierRequestCreatedBy")
@@ -172,6 +176,7 @@ model User {
   sentEmails                 SentEmail[]           @relation("SentEmailSentBy")
   aiProviderSettingsCreated  AiProviderSetting[]   @relation("AiProviderSettingCreatedBy")
   aiExecutions               AiExecution[]         @relation("AiExecutionActor")
+  contactNotesCreated        ContactNote[]         @relation("ContactNoteCreatedBy")
 
   @@map("users")
 }
@@ -283,6 +288,28 @@ model SupplierContact {
   @@map("supplier_contacts")
 }
 
+/// A rough supplier-contact note pasted into the right dock. The pasted text is kept exactly as typed; the contact fields beside it are proposed by rules and confirmed by a person. Never turned into a SupplierContact automatically. Archived, not deleted.
+model ContactNote {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  body        String
+  /// Details a person confirmed from the pasted text (the rules only propose them). Unknown stays NULL / empty.
+  contactName String?      @map("contact_name")
+  company     String?
+  phones      String[]     @default([])
+  emails      String[]     @default([])
+  /// A one-line description typed by a person.
+  description String?
+  status      RecordStatus @default(ACTIVE)
+  createdById String       @map("created_by_id") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy User @relation("ContactNoteCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("contact_notes")
+}
+
 // Association tables. Rows here are metadata, not evidence, so they cascade with their parents (parents are never hard-deleted anyway).
 
 model SupplierBrand {
@@ -355,6 +382,8 @@ model Product {
   normalizedModel      String? @map("normalized_model")
   /// GLOBALLY unique when present (NULLs allowed, Postgres treats them as distinct). A collision surfaces as a "duplicate product" error.
   normalizedPartNumber String? @unique @map("normalized_part_number")
+  /// Canonical model identity with spec words removed and "Gen 7" = "G7" (specs/model-key.ts). Groups the variants of one model; NOT unique.
+  modelKey             String? @map("model_key")
 
   /// Created from a broadcast, not yet curated. Never blocks procurement entry.
   isTemporary Boolean      @default(false) @map("is_temporary")
@@ -366,6 +395,7 @@ model Product {
   category Category? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
   aliases           ProductAlias[]
+  attributes        ProductAttribute[]
   broadcastItems    BroadcastItem[]
   enquiryItems      EnquiryItem[]
   priceObservations PriceObservation[]
@@ -374,8 +404,46 @@ model Product {
   @@index([brandId])
   @@index([categoryId])
   @@index([normalizedModel])
+  @@index([modelKey])
   @@index([status, isTemporary])
   @@map("products")
+}
+
+/// One structured specification value of a product ("RAM 16 GB"): what the product IS, the counterpart of EnquiryRequirement (what the customer WANTS).
+/// `attributeKey` comes from the code registry (modules/specs/registry.ts). Typed value columns, no JSON. Append-only like requirements: a person's
+/// correction retracts the active row and writes a HUMAN row (trigger); one active row per product and key. `source` reuses RequirementSource.
+/// An attribute a product does not have a row for is UNKNOWN, never assumed.
+model ProductAttribute {
+  id                    String            @id @default(uuid(7)) @db.Uuid
+  productId             String            @map("product_id") @db.Uuid
+  attributeKey          String            @map("attribute_key")
+  /// The words as written ("16GB", "U7-256V").
+  rawValue              String            @map("raw_value")
+  /// Exactly one of the three is set (CHECK): text, number or list.
+  valueText             String?           @map("value_text")
+  valueNum              Decimal?          @map("value_num") @db.Decimal(12, 3)
+  valueList             String[]          @default([]) @map("value_list")
+  unit                  String?
+  confidence            ExtractionConfidence
+  source                RequirementSource
+  /// Provenance when read from a broadcast line; NULL when read from the product's own name and description.
+  sourceBroadcastItemId String?           @map("source_broadcast_item_id") @db.Uuid
+  createdById           String            @map("created_by_id") @db.Uuid
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  retractedAt      DateTime? @map("retracted_at") @db.Timestamptz(3)
+  retractedById    String?   @map("retracted_by_id") @db.Uuid
+  retractionReason String?   @map("retraction_reason")
+
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sourceItem    BroadcastItem? @relation("ProductAttributeSourceItem", fields: [sourceBroadcastItemId], references: [id], onDelete: Restrict)
+  createdBy     User           @relation("ProductAttributeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  retractedBy   User?          @relation("ProductAttributeRetractedBy", fields: [retractedById], references: [id], onDelete: Restrict)
+
+  @@index([productId])
+  @@index([attributeKey, valueNum])
+  @@index([attributeKey, valueText])
+  @@map("product_attributes")
 }
 
 /// Alternative names suppliers/customers use for a product.
@@ -510,6 +578,7 @@ model BroadcastItem {
   confirmedBy User?     @relation("ItemConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
 
   aliasesLearned    ProductAlias[]     @relation("AliasSourceItem")
+  attributesRead    ProductAttribute[] @relation("ProductAttributeSourceItem")
   priceObservations PriceObservation[]
   stockObservations StockObservation[]
 
@@ -808,11 +877,70 @@ model EnquiryItem {
   confirmedBy          User?                 @relation("EnquiryItemConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
   procurementDecisions ProcurementDecision[]
   quotationLines       QuotationLine[]
+  requirements         EnquiryRequirement[]
 
   @@unique([enquiryId, position])
   @@index([enquiryId, reviewStatus])
   @@index([productId])
   @@map("enquiry_items")
+}
+
+enum RequirementOperator {
+  EQUALS
+  GREATER_THAN_OR_EQUAL
+  LESS_THAN_OR_EQUAL
+  IN
+  BETWEEN
+  CONTAINS
+}
+
+/// How much the customer's wording matters. "Preferred" is NICE, not a comparison.
+enum RequirementImportance {
+  MUST
+  SHOULD
+  NICE
+}
+
+enum RequirementSource {
+  PARSER
+  AI
+  HUMAN
+}
+
+/// One structured specification requirement of an enquiry item ("RAM at least 16 GB"). The item keeps its identity fields (brand, model, part number,
+/// quantity) and its raw `specText`; this table holds the variant-varying specifications as typed values so they can be compared.
+/// `attributeKey` is validated against the code registry (modules/specs/registry.ts). Append-only: a person's edit RETRACTS the active row and
+/// writes a HUMAN row, so the parser's value stays in history and the human value wins (trigger allows only retraction; one active row per key).
+/// Traceable to the evidence through `rawValue` and the item's `sourceText` / line range.
+model EnquiryRequirement {
+  id            String                @id @default(uuid(7)) @db.Uuid
+  enquiryItemId String                @map("enquiry_item_id") @db.Uuid
+  attributeKey  String                @map("attribute_key")
+  operator      RequirementOperator
+  importance    RequirementImportance @default(MUST)
+  /// The wording as written ("512GB SSD").
+  rawValue      String                @map("raw_value")
+  /// Exactly the columns the operator needs (CHECK): EQUALS text|number, >=/<= number, BETWEEN number..number_max, IN list, CONTAINS text.
+  valueText     String?               @map("value_text")
+  valueNum      Decimal?              @map("value_num") @db.Decimal(12, 3)
+  valueNumMax   Decimal?              @map("value_num_max") @db.Decimal(12, 3)
+  valueList     String[]              @default([]) @map("value_list")
+  unit          String?
+  confidence    ExtractionConfidence
+  source        RequirementSource
+  createdById   String                @map("created_by_id") @db.Uuid
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  retractedAt      DateTime? @map("retracted_at") @db.Timestamptz(3)
+  retractedById    String?   @map("retracted_by_id") @db.Uuid
+  retractionReason String?   @map("retraction_reason")
+
+  enquiryItem EnquiryItem @relation(fields: [enquiryItemId], references: [id], onDelete: Restrict)
+  createdBy   User        @relation("RequirementCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  retractedBy User?       @relation("RequirementRetractedBy", fields: [retractedById], references: [id], onDelete: Restrict)
+
+  @@index([enquiryItemId])
+  @@map("enquiry_requirements")
 }
 
 /// An IMAP mailbox. SECURITY: `passwordEncrypted` is never selected except by the sync and test-connection services (ADR 0005).

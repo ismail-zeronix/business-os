@@ -90,8 +90,11 @@ const STOPWORDS = new Set(
 
 const QUANTITY_WORDS = new Set(["unit", "units", "pcs", "pc", "pieces", "nos", "qty", "quantity", "x"]);
 
+/** A specification written as a number and a unit ("16GB", "512GB", "5.4GHz", "144Hz", "14inch"): it describes a variant, it is never a part number. */
+const isSpecToken = (token: string) => /^\d+(?:\.\d+)?(?:gb|tb|mb|ghz|mhz|hz|inch|in|w|wh|nits|mbps|gbps)$/i.test(token);
+
 /** "has letters and digits" (21M7002XAD, E14, C9200L-24P-4G) or a long digit run: shaped like a part number or model. */
-const looksLikeCode = (token: string) => token.length >= 3 && ((/[a-z]/i.test(token) && /\d/.test(token)) || /^\d{5,}$/.test(token));
+const looksLikeCode = (token: string) => token.length >= 3 && !isSpecToken(token) && ((/[a-z]/i.test(token) && /\d/.test(token)) || /^\d{5,}$/.test(token));
 
 /** True when the question contains something shaped like a part number or model code. */
 export function hasCodeToken(question: string): boolean {

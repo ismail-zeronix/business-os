@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { ShellProvider } from "@/components/application/shell-context";
+import { RightDock } from "@/components/application/right-dock/right-dock";
 import { AppSidebar } from "@/components/application/sidebar";
 import { Topbar } from "@/components/application/topbar";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -55,6 +56,7 @@ export default async function WorkspaceLayout({ children }: LayoutProps<"/">) {
           ) : null}
           <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-canvas">{children}</main>
         </div>
+        {signedIn ? <RightDock /> : null}
       </SidebarProvider>
       {signedIn ? <AssistantLauncher /> : null}
     </ShellProvider>

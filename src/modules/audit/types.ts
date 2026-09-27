@@ -4,6 +4,7 @@ import type { Prisma } from "../../generated/prisma/client";
 export const AUDIT_ENTITY_TYPES = [
   "Supplier",
   "SupplierContact",
+  "ContactNote",
   "Brand",
   "Category",
   "Product",
@@ -16,6 +17,7 @@ export const AUDIT_ENTITY_TYPES = [
   "CustomerContact",
   "Enquiry",
   "EnquiryItem",
+  "EnquiryRequirement",
   "SupplierRequest",
   "ProcurementDecision",
   "Quotation",
@@ -40,6 +42,9 @@ export type AuditAction =
   | "supplier_contact.archived"
   | "supplier_contact.brands_changed"
   | "supplier_contact.categories_changed"
+  | "contact_note.created"
+  | "contact_note.updated"
+  | "contact_note.archived"
   | "brand.created"
   | "brand.updated"
   | "brand.status_changed"
@@ -49,9 +54,11 @@ export type AuditAction =
   | "product.created"
   | "product.updated"
   | "product.status_changed"
+  | "product.specifications_read"
   | "product_alias.added"
   | "product_alias.removed"
   | "broadcast.created"
+  | "broadcast.updated"
   | "broadcast.archived"
   | "broadcast.bulk_confirmed"
   | "broadcast_item.created"
@@ -81,6 +88,10 @@ export type AuditAction =
   | "enquiry_item.confirmed"
   | "enquiry_item.ignored"
   | "enquiry_item.reopened"
+  | "enquiry_requirement.added"
+  | "enquiry_requirement.replaced"
+  | "enquiry_requirement.retracted"
+  | "enquiry_requirement.extracted"
   | "supplier_request.added"
   | "supplier_request.removed"
   | "supplier_request.sent"

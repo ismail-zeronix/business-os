@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EVIDENCE_CHANNEL_LABEL, toOptions } from "@/lib/labels";
 import { createBroadcastAction } from "../actions";
-import { matchExactlyOne, readHeaderNames } from "../parsing/header-lines";
+import { matchExactlyOne, readSenderNames } from "../parsing/header-lines";
 import { BROADCAST_ENTRY_CHANNELS } from "../schemas";
 import { MentionTextarea, type MentionContact } from "./mention-textarea";
 import { Alert } from "@/components/ui/alert";
@@ -80,7 +80,7 @@ export function BroadcastForm({
   function changeText(text: string) {
     setRawText(text);
     if (request) return; // a reply stays with the supplier the request was sent to
-    const named = readHeaderNames(text);
+    const named = readSenderNames(text);
     let supplier = supplierId;
     if (named.supplier && (supplier === null || supplierAuto)) {
       const match = matchExactlyOne(named.supplier, suppliers, (s) => [s.label, s.legalName]);
@@ -96,19 +96,21 @@ export function BroadcastForm({
   }
 
   // What the message says, next to what is selected: a short note when it was read, a warning when it does not fit. Nothing is guessed.
-  const named = request ? null : readHeaderNames(rawText);
+  const named = request ? null : readSenderNames(rawText);
   const supplierMatch = named?.supplier ? matchExactlyOne(named.supplier, suppliers, (s) => [s.label, s.legalName]) : null;
   const contactMatch = named?.contact && supplierId ? matchExactlyOne(named.contact, contacts.filter((c) => c.supplierId === supplierId), (c) => [c.name]) : null;
   const readFromMessage = [supplierAuto && supplierName ? `supplier ${supplierName}` : null, contactAuto && contactOf(contactId) ? `contact ${contactOf(contactId)?.name}` : null].filter(Boolean);
   const warnings: string[] = [];
+  const said = named?.source === "signature" ? "The signature names the supplier" : "The message says SUPPLIER :";
+  const saidContact = named?.source === "signature" ? "The signature names the contact" : "The message says CONTACT :";
   if (named?.supplier && supplierMatch) {
-    if (supplierMatch.kind === "none") warnings.push(`The message says SUPPLIER : ${named.supplier}, but no supplier has exactly that name. Pick one, or add it under Suppliers.`);
-    else if (supplierMatch.kind === "many") warnings.push(`The message says SUPPLIER : ${named.supplier}, but more than one supplier has that name. Pick one.`);
+    if (supplierMatch.kind === "none") warnings.push(`${said} ${named.supplier}${named.source === "signature" ? ` (${[named.email, named.phone].filter(Boolean).join(", ") || "no contact details"})` : ""}, but no supplier has exactly that name. Pick one, or add it under Suppliers${named.contact ? ` (contact ${named.contact})` : ""}, then paste again.`);
+    else if (supplierMatch.kind === "many") warnings.push(`${said} ${named.supplier}, but more than one supplier has that name. Pick one.`);
     else if (supplierId && supplierMatch.item.value !== supplierId) warnings.push(`The message names ${supplierMatch.item.label} as the supplier, but ${supplierName} is selected.`);
   }
   if (named?.contact && contactMatch) {
-    if (contactMatch.kind === "none") warnings.push(`The message says CONTACT : ${named.contact}, but ${supplierName} has no contact with exactly that name.`);
-    else if (contactMatch.kind === "many") warnings.push(`The message says CONTACT : ${named.contact}, but ${supplierName} has more than one contact with that name. Pick one.`);
+    if (contactMatch.kind === "none") warnings.push(`${saidContact} ${named.contact}, but ${supplierName} has no contact with exactly that name.`);
+    else if (contactMatch.kind === "many") warnings.push(`${saidContact} ${named.contact}, but ${supplierName} has more than one contact with that name. Pick one.`);
     else if (contactId && contactMatch.item.value !== contactId) warnings.push(`The message names ${contactMatch.item.name} as the contact, but ${contactOf(contactId)?.name} is selected.`);
   }
   const duplicateOf = state && !state.ok ? state.fieldErrors?._duplicate : undefined;
@@ -175,7 +177,7 @@ export function BroadcastForm({
         htmlFor="bf-rawText"
         required
         error={err("rawText")}
-        hint='Paste it exactly as received. The original is preserved and can always be opened later. A "SUPPLIER :" or "CONTACT :" line picks that supplier or contact when exactly one has that name; or type @ after it to choose from a list.'
+        hint='Paste it exactly as received. The original is preserved and can always be opened later. A "SUPPLIER :" or "CONTACT :" line, or the signature at the end (company, e-mail, phone, name), picks that supplier or contact when exactly one has that name; or type @ after it to choose from a list.'
       >
         <MentionTextarea
           id="bf-rawText"

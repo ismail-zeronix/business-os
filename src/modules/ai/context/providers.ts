@@ -43,6 +43,7 @@ export const productOffersProvider: ContextProvider = {
         categoryName: hit.categoryName,
         isTemporary: hit.isTemporary,
         matchLabel: matchLabel(hit),
+        specifications: hit.specifications,
       });
 
       for (const offer of hit.offers) {

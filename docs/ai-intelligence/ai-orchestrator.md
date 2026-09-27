@@ -26,8 +26,8 @@ An intent that is not wired yet answers plainly that it is not available, and do
 ## As built in Stage 1 (`orchestrator/run.ts`)
 
 - **Intent** is decided by rules (`intents.ts`). Requests for modules not built yet (quotation drafts, customer replies, follow-ups, alternatives...) get a plain "not available yet" answer from the rules, with no provider call.
-- **Search**: on a product page, a question that names no code and says "this"/"it" is about that product. Otherwise up to two deterministic terms are searched (the remaining phrase, then a code-shaped token). Only if they find nothing is the model asked for up to three search terms (`interpret-v1`). A question that names nothing gets "Which product do you mean?" without a model call.
-- **Answer**: the evidence package is rendered as text (`answer-v1`), the model returns a draft, and `validate.ts` rejects unknown references and any figure (above 20) that is not in the evidence or the question. One repair retry, then `INVALID_OUTPUT`.
+- **Search**: on a product page, a question that names no code and says "this"/"it" is about that product. Otherwise up to two deterministic terms are searched (the remaining phrase, then a code-shaped token). Only if they find nothing is the model asked for up to three search terms (`interpret-v2`: knows the code shapes real supplier lists use and leaves capacities and speeds out). A question that names nothing gets "Which product do you mean?" without a model call.
+- **Answer**: the evidence package is rendered as text (`answer-v2`; a product line may carry "specifications read from its name (not verified)", which the model must quote as listed, never as confirmed), the model returns a draft, and `validate.ts` rejects unknown references and any figure (above 20) that is not in the evidence or the question. One repair retry, then `INVALID_OUTPUT`.
 - **Budget**: at most 4 tool calls and 3 provider calls per request.
 - **Log**: one `ai_executions` row per run, success or failure, with provider, served model, prompt version, counts, tokens and latency.
 

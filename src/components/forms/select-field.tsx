@@ -16,6 +16,7 @@ export function SelectField({
   id,
   noneLabel = "Unknown",
   allowNone = true,
+  onChange,
 }: {
   name: string;
   options: { value: string; label: string }[];
@@ -23,12 +24,20 @@ export function SelectField({
   id?: string;
   noneLabel?: string;
   allowNone?: boolean;
+  /** Called with the chosen value ("" for the none choice) so a parent form can react to it. */
+  onChange?: (value: string) => void;
 }) {
   const [value, setValue] = useState<string>(defaultValue ?? (allowNone ? NONE : (options[0]?.value ?? "")));
   return (
     <>
       <input type="hidden" name={name} value={value === NONE ? "" : value} />
-      <Select value={value} onValueChange={setValue}>
+      <Select
+        value={value}
+        onValueChange={(next) => {
+          setValue(next);
+          onChange?.(next === NONE ? "" : next);
+        }}
+      >
         <SelectTrigger id={id} className="w-full">
           <SelectValue />
         </SelectTrigger>
