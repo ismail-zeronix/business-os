@@ -21,6 +21,7 @@ import type {
   WarrantyType,
 } from "../generated/prisma/enums";
 import type { CallDirection, CallOutcome } from "../modules/customers/schemas";
+import type { SpecVerdict } from "../modules/specs/verdict";
 
 /** Human labels for enums: one place, so wording never drifts between screens (docs/design/UI_SYSTEM.md section 6). Pure, client-safe. */
 
@@ -185,6 +186,16 @@ export const AI_PROVIDER_LABEL: Record<AiProvider, string> = {
   ANTHROPIC: "Anthropic Claude",
   OPENAI: "OpenAI",
   GEMINI: "Google Gemini",
+};
+
+/** How well a candidate product's own specification satisfies a requirement (src/modules/specs/verdict.ts). */
+export const SPEC_VERDICT_LABEL: Record<SpecVerdict, string> = {
+  EXACT: "Matches",
+  UPGRADE: "Exceeds",
+  COMPATIBLE: "Compatible",
+  PARTIAL: "Partial match",
+  MISMATCH: "Does not match",
+  UNKNOWN: "Unknown",
 };
 
 /** Options for <select> controls, in a stable, deliberate order. */

@@ -2,7 +2,7 @@
 
 import { Plus, Search } from "lucide-react";
 import { useActionState, useEffect, useState, useTransition } from "react";
-import { MatchBadge } from "@/components/application/status-badges";
+import { MatchBadge, SpecVerdictPill } from "@/components/application/status-badges";
 import { FormDrawer } from "@/components/forms/form-drawer";
 import { FormMessage } from "@/components/forms/form-message";
 import type { SelectOption } from "@/components/forms/multi-select";
@@ -14,10 +14,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { MatchBasis } from "@/generated/prisma/enums";
+import { SPEC_VERDICT_LABEL } from "@/lib/labels";
 import { searchProductsForLinkAction } from "@/modules/broadcasts/actions";
 import type { MatchCandidate } from "@/modules/products/matching";
 import type { ProductPickerRow } from "@/modules/products/queries";
+import { requirementLabel } from "@/modules/specs/format";
+import type { RequirementVerdict, SpecVerdict } from "@/modules/specs/verdict";
 import { linkEnquiryItemAction } from "../actions";
+import type { CandidateWithVerdict } from "../queries";
 import { EnquiryItemProductForm, type ProductDefaults } from "./item-product-form";
 
 export type LinkedProduct = { id: string; name: string; partNumber: string | null; brandName: string | null; basis: MatchBasis | null };
@@ -28,7 +32,11 @@ const STRENGTH_LABEL: Record<MatchCandidate["strength"], { label: string; varian
   POSSIBLE: { label: "Possible", variant: "neutral" },
 };
 
-type Row = { id: string; name: string; partNumber: string | null; brandName: string | null; badge?: MatchCandidate["strength"] };
+type Row = { id: string; name: string; partNumber: string | null; brandName: string | null; badge?: MatchCandidate["strength"]; overall?: SpecVerdict | null; perRequirement?: RequirementVerdict[] };
+
+/** Per-requirement breakdown for the verdict pill's tooltip, e.g. "RAM: Matches · Storage: Exceeds". */
+const specExplanation = (perRequirement: RequirementVerdict[]): string | undefined =>
+  perRequirement.length ? perRequirement.map((p) => `${requirementLabel(p.attributeKey)}: ${SPEC_VERDICT_LABEL[p.verdict]}`).join(" · ") : undefined;
 
 /**
  * Links an enquiry requirement to a product in the master (optional: the requirement can be confirmed without one). Shows the current
@@ -46,7 +54,7 @@ export function EnquiryProductLinker({
 }: {
   itemId: string;
   current: LinkedProduct | null;
-  candidates: MatchCandidate[];
+  candidates: CandidateWithVerdict[];
   aliasWording: string;
   createDefaults: ProductDefaults;
   brandOptions: SelectOption[];
@@ -78,7 +86,7 @@ export function EnquiryProductLinker({
 
   const showPicker = !current || changing;
   const rows: Row[] = [
-    ...candidates.map((c) => ({ id: c.productId, name: c.name, partNumber: c.partNumber, brandName: c.brandName, badge: c.strength })),
+    ...candidates.map((c) => ({ id: c.productId, name: c.name, partNumber: c.partNumber, brandName: c.brandName, badge: c.strength, overall: c.overall, perRequirement: c.perRequirement })),
     ...results.filter((r) => !candidates.some((c) => c.productId === r.id)),
   ].filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i && r.id !== current?.id);
 
@@ -136,6 +144,7 @@ export function EnquiryProductLinker({
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
+                    {row.overall ? <SpecVerdictPill verdict={row.overall} title={specExplanation(row.perRequirement ?? [])} /> : null}
                     {row.badge ? <Badge variant={STRENGTH_LABEL[row.badge].variant}>{STRENGTH_LABEL[row.badge].label}</Badge> : null}
                     {linkForm(row.id, "Link", row.badge === "EXACT" ? "default" : "outline")}
                   </div>

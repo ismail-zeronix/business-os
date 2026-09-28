@@ -1,4 +1,5 @@
 import type { EmailBand, EnquiryPriority, EnquiryStatus, ExtractionConfidence, ItemReviewStatus, MatchBasis, QuotationStatus, RecordStatus, StockStatus, SupplierRequestStatus, VatState } from "@/generated/prisma/enums";
+import type { SpecVerdict } from "@/modules/specs/verdict";
 import { SoftPill, type PillTone } from "@/components/application/soft-pill";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime, formatRelativeAge } from "@/lib/format";
@@ -11,6 +12,7 @@ import {
   QUOTATION_STATUS_LABEL,
   RECORD_STATUS_LABEL,
   REVIEW_STATUS_LABEL,
+  SPEC_VERDICT_LABEL,
   STOCK_STATUS_LABEL,
   SUPPLIER_REQUEST_STATUS_LABEL,
   VAT_STATE_LABEL,
@@ -38,6 +40,24 @@ export function MatchBadge({ productId, basis }: { productId: string | null; bas
   if (basis === "MODEL" || basis === "ALIAS") return <Badge variant="info">Probable</Badge>;
   if (basis === "NEW_PRODUCT") return <Badge variant="success">New product</Badge>;
   return <Badge variant="success">Confirmed by you</Badge>; // MANUAL: an explicit human relink to an existing product
+}
+
+/** How well a candidate product's own specification satisfies a requirement's MUST attributes (src/modules/specs/verdict.ts). */
+export const SPEC_VERDICT_TONE: Record<SpecVerdict, PillTone> = {
+  EXACT: "green",
+  UPGRADE: "sky",
+  COMPATIBLE: "teal",
+  PARTIAL: "amber",
+  MISMATCH: "rose",
+  UNKNOWN: "neutral",
+};
+
+export function SpecVerdictPill({ verdict, title }: { verdict: SpecVerdict; title?: string }) {
+  return (
+    <SoftPill tone={SPEC_VERDICT_TONE[verdict]} dot={verdict !== "UNKNOWN"} title={title}>
+      {SPEC_VERDICT_LABEL[verdict]}
+    </SoftPill>
+  );
 }
 
 export function StockBadge({ status, quantity }: { status: StockStatus; quantity?: number | null }) {
