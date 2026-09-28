@@ -7,7 +7,7 @@ import { writeAudit } from "../audit/service";
 import { addCustomerContact } from "../customers/contact.service";
 import { createCustomer } from "../customers/service";
 import { createEvidence } from "../evidence/service";
-import { findMatchCandidates, pickAutoLink } from "../products/matching";
+import { findMatchCandidates, pickAutoLinkWithSpecs } from "../products/matching";
 import { enquiryRulesParser } from "./parsing/enquiry-parser";
 import { createParsedRequirements, proposeRequirementsForItem } from "./requirement.service";
 import { emailHeaderLineCount, emailSubjectLineIndex } from "./parsing/quoted";
@@ -80,8 +80,9 @@ export async function createEnquiry(ctx: ServiceContext, input: EnquiryCreateSer
     let requirementCount = 0;
     for (const item of parsed.items) {
       const candidates = await findMatchCandidates(c.db, { partNumber: item.partNumber, model: item.modelText, brandText: item.brandText, description: item.description });
-      const link = pickAutoLink(candidates);
       const { extractedData, confidence, ...fields } = item;
+      const proposedRequirements = proposeRequirementsForItem({ sourceText: fields.sourceText, description: fields.description, specText: fields.specText });
+      const link = await pickAutoLinkWithSpecs(c.db, candidates, proposedRequirements);
       // The parser's original values are kept write-once in extracted_data, so the workspace can always show "original vs corrected".
       const original = {
         description: fields.description,
@@ -103,8 +104,7 @@ export async function createEnquiry(ctx: ServiceContext, input: EnquiryCreateSer
           matchBasis: link?.basis ?? null,
         },
       });
-      // Structured specification requirements are proposed from the same wording, next to the raw text the item keeps.
-      requirementCount += await createParsedRequirements(c, created.id, proposeRequirementsForItem({ sourceText: fields.sourceText, description: fields.description, specText: fields.specText }));
+      requirementCount += await createParsedRequirements(c, created.id, proposedRequirements);
     }
 
     await writeAudit(c, {
