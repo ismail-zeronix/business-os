@@ -49,3 +49,6 @@ next-env.d.ts
 
 # superpowers scratch workspace (per-plan ledgers/review packages)
 /.superpowers/
+
+# superpowers isolated worktrees
+/.worktrees/
