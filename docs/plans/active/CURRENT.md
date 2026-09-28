@@ -98,6 +98,782 @@ Built: migration `20260927140000_product_attributes` (applied, additive), `produ
 
 Known limits: the model key still differs when the model text includes the family word; a platform code such as "LNL" stays in the key; the product-attribute edit UI is not built; the product page panel was not seen in a browser (sign-in required).
 
+## Structured requirements, phases 3-4 implementation plan (2026-09-29, not yet built)
+
+> **For agentic workers:** REQUIRED SUB-SKILL: use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add spec-aware candidate ranking/explanation to the enquiry product picker (phase 3, display-only, auto-link unchanged), then use the same comparison to stop auto-link from picking a product that conflicts with or leaves unknown a MUST-have requirement (phase 4).
+
+**Architecture:** One new pure module (`src/modules/specs/verdict.ts`) compares a requirement (operator + importance) against a product attribute (a fact) and returns a graded verdict (EXACT/COMPATIBLE/UPGRADE/PARTIAL/MISMATCH/UNKNOWN). A batched loader reads a set of candidate products' active attributes in one query. Phase 3 wires the verdict into the existing candidate picker (`EnquiryProductLinker`) purely for display and ranking. Phase 4 adds `pickAutoLinkWithSpecs`, a thin wrapper around the existing `pickAutoLink` that vetoes its pick when a MUST requirement comes back MISMATCH or UNKNOWN, and swaps it in at the two enquiry-side call sites. No schema or migration changes: everything reads the `enquiry_requirements` and `product_attributes` tables added in phases 1-2.
+
+**Tech Stack:** Next.js server components/actions, Prisma 7.10, PostgreSQL, TypeScript 5.9 — matches the rest of the module, no new dependency.
+
+**Spec:** This section (phases 3 and 4 of the plan paragraph above, this file lines 15-22). The two phases' full scope text, verbatim: phase 3 — "Compare and explain (shadow mode): structured candidate search, per-requirement verdicts (EXACT, COMPATIBLE, UPGRADE, PARTIAL, MISMATCH, UNKNOWN), ranking and explanation in the candidate list. Auto-link unchanged." Phase 4 — "Auto-link gating: `pickAutoLink` redefined so conflicts and unknown must-have specifications force human review." Neither phase has a separate acceptance-criteria appendix anywhere in the docs; the verdict taxonomy, gating precedence and ranking algorithm below are originated by this plan (confirmed via `docs/architecture/DATA_MODEL.md`, `docs/modules/ENQUIRIES.md`, `docs/modules/PRODUCTS.md`, `docs/ideas/BACKLOG.md` and `docs/decisions/*` — none define them).
+
+## Global Constraints
+
+- **No automated tests this phase** (CLAUDE.md, development-first rule): do not write Vitest/unit tests for this work. Each task below substitutes the skill's usual "write a failing test" steps with the project's own established verification pattern from the phase 1/2 status sections above: a `TEST`-labelled record or a rolled-back transaction against the **project database** (`127.0.0.1:5442`), with exact reported counts/values, plus `tsc`/`eslint` clean as a baseline. Do not create a separate test/scratch database.
+- Keep TypeScript and ESLint clean (`npx tsc --noEmit`, `npx eslint <files>`) after every task — this is not optional even though tests are deferred.
+- **No schema or migration changes** in this plan: every read is against `enquiry_requirements` and `product_attributes`, both already migrated (phases 1-2). If a task seems to need a new column, stop and flag it rather than writing a migration.
+- **Deterministic rules only** (CLAUDE.md): no LLM/AI call anywhere in this comparison. Phase 6 ("AI-proposed requirements") is explicitly later scope.
+- **Unknown stays unknown**: a product with no row for an attribute is UNKNOWN, never assumed equal or assumed absent-therefore-fine.
+- Timestamps/currency/locale conventions are irrelevant to this plan (no dates or money involved).
+- Prisma pinned at 7.10, TypeScript at 5.9 — use existing patterns only, no new packages.
+- Broadcasts are **out of scope**: `src/modules/broadcasts/*` has no structured customer-requirement model to compare against and must not be touched by this plan.
+
+## Review Focus
+
+- A candidate product with zero `product_attributes` rows (never backfilled, or created after the phase-2 backfill ran) must show UNKNOWN for every requirement, never crash, and must block auto-link when the item has a MUST requirement pointed at that key — covered in Task 4's verification.
+- A BETWEEN requirement (e.g. `screen_in`) whose candidate value sits just outside the exact range but inside the near-miss band must read COMPATIBLE, not silently EXACT and not overly harsh MISMATCH — covered in Task 1's verification.
+- A TEXT EQUALS requirement (cpu/os) where the candidate's value is a *broader* family than what was asked (e.g. requirement wants `windows-11-pro`, product only states `windows-11`) must read PARTIAL, not COMPATIBLE — the direction of the prefix match matters and is easy to get backwards. Covered in Task 1's verification.
+- An item with zero active requirements (parser found nothing, or a non-laptop category) must make `pickAutoLinkWithSpecs` behave byte-for-byte like the old `pickAutoLink` — no accidental blocking of every plain enquiry. Covered in Task 4's verification.
+- When `pickAutoLink` itself already returns `null` (ambiguous text match, unrelated to specs), `pickAutoLinkWithSpecs` must short-circuit before touching the database at all — no wasted `product_attributes` query, no null-pointer access on a missing candidate. Covered in Task 4's verification.
+
+---
+
+### Task 1: Spec verdict engine
+
+**Files:**
+- Create: `src/modules/specs/verdict.ts`
+- Modify: none
+
+**Interfaces:**
+- Consumes: `RequirementOperator`, `RequirementImportance` from `./types` (existing, unchanged).
+- Produces (consumed by Tasks 2-4): `SpecVerdict`, `RequirementInput`, `AttributeInput`, `RequirementVerdict`, `PersistedRequirement`, `verdictForRequirement(requirement: RequirementInput, attribute: AttributeInput | null): SpecVerdict`, `compareRequirementsToProduct(requirements: readonly RequirementInput[], attributes: readonly AttributeInput[]): RequirementVerdict[]`, `overallVerdict(perRequirement: readonly { importance: RequirementImportance; verdict: SpecVerdict }[]): SpecVerdict`, `toRequirementInput(r: PersistedRequirement): RequirementInput`, `SPEC_VERDICT_SEVERITY: Record<SpecVerdict, number>`.
+
+- [ ] **Step 1: Write `src/modules/specs/verdict.ts`**
+
+```ts
+import type { Prisma } from "../../generated/prisma/client";
+import type { RequirementImportance, RequirementOperator } from "./types";
+
+/**
+ * How well a product's own specification (`product_attributes`: what it IS, no operator or importance) satisfies one customer
+ * requirement (`enquiry_requirements`: what they asked for, with an operator and MUST/SHOULD/NICE). The counterpart of
+ * `compare.ts`'s `compareAttributes` (which only checks whether two flat attribute sets agree, with no operator or direction) —
+ * this module is operator-aware and direction-aware, so "at least 16GB, product has 32GB" reads UPGRADE, not just "agree".
+ *
+ * EXACT = satisfies the requirement precisely. UPGRADE = satisfies it and exceeds it (more RAM/storage than asked, a lower
+ * price/weight ceiling than the maximum asked). COMPATIBLE = satisfies it via a looser match (a more specific CPU/OS edition
+ * than asked, or a BETWEEN value just outside the stated range). PARTIAL = satisfies some but not all of a multi-value
+ * requirement (some but not all requested keyboard languages), or the product is a broader family than the specific thing
+ * asked for. MISMATCH = contradicts the requirement. UNKNOWN = the product has no value on record for that attribute.
+ */
+
+export type SpecVerdict = "EXACT" | "COMPATIBLE" | "UPGRADE" | "PARTIAL" | "MISMATCH" | "UNKNOWN";
+
+/** Best to worst, used both to rank candidates and to decide the worst verdict among a set (e.g. every MUST requirement). */
+export const SPEC_VERDICT_SEVERITY: Record<SpecVerdict, number> = {
+  UPGRADE: 5,
+  EXACT: 4,
+  COMPATIBLE: 3,
+  PARTIAL: 2,
+  UNKNOWN: 1,
+  MISMATCH: 0,
+};
+
+/** One `enquiry_requirements` row's comparable shape (Decimal fields already converted to plain numbers by the caller). */
+export type RequirementInput = {
+  attributeKey: string;
+  operator: RequirementOperator;
+  importance: RequirementImportance;
+  valueText: string | null;
+  valueNum: number | null;
+  valueNumMax: number | null;
+  valueList: string[] | null;
+};
+
+/** One `product_attributes` row's comparable shape. */
+export type AttributeInput = { attributeKey: string; valueText: string | null; valueNum: number | null; valueList: string[] };
+
+export type RequirementVerdict = { attributeKey: string; importance: RequirementImportance; verdict: SpecVerdict };
+
+/** The raw Prisma shape of an active `EnquiryRequirement` row (valueNum/valueNumMax as Decimal), for `toRequirementInput`. */
+export type PersistedRequirement = {
+  attributeKey: string;
+  operator: RequirementOperator;
+  importance: RequirementImportance;
+  valueText: string | null;
+  valueNum: Prisma.Decimal | null;
+  valueNumMax: Prisma.Decimal | null;
+  valueList: string[];
+};
+
+export function toRequirementInput(r: PersistedRequirement): RequirementInput {
+  return {
+    attributeKey: r.attributeKey,
+    operator: r.operator,
+    importance: r.importance,
+    valueText: r.valueText,
+    valueNum: r.valueNum === null ? null : Number(r.valueNum),
+    valueNumMax: r.valueNumMax === null ? null : Number(r.valueNumMax),
+    valueList: r.valueList,
+  };
+}
+
+/** Numeric equality tolerance, matching `compare.ts`'s existing epsilon for the same reason (rounding in stored decimals). */
+const NUMBER_TOLERANCE = 0.5;
+
+/** Attributes where a shorter value is a less specific form of a longer one — same constant/logic as `compare.ts`. */
+const PREFIX_KEYS = new Set(["cpu", "os"]);
+
+type TextRelation = "equal" | "attribute-more-specific" | "attribute-broader" | "different";
+
+function textRelation(requirementValue: string, attributeValue: string): TextRelation {
+  if (requirementValue === attributeValue) return "equal";
+  if (attributeValue.startsWith(`${requirementValue}/`) || attributeValue.startsWith(`${requirementValue}-`)) return "attribute-more-specific";
+  if (requirementValue.startsWith(`${attributeValue}/`) || requirementValue.startsWith(`${attributeValue}-`)) return "attribute-broader";
+  return "different";
+}
+
+/** One requirement against one candidate's attribute (or `null` when the product has no value for that key: always UNKNOWN). */
+export function verdictForRequirement(requirement: RequirementInput, attribute: AttributeInput | null): SpecVerdict {
+  if (!attribute) return "UNKNOWN";
+
+  switch (requirement.operator) {
+    case "EQUALS": {
+      if (requirement.valueNum !== null) {
+        if (attribute.valueNum === null) return "UNKNOWN";
+        return Math.abs(attribute.valueNum - requirement.valueNum) < NUMBER_TOLERANCE ? "EXACT" : "MISMATCH";
+      }
+      if (requirement.valueText !== null) {
+        if (attribute.valueText === null) return "UNKNOWN";
+        if (!PREFIX_KEYS.has(requirement.attributeKey)) return requirement.valueText === attribute.valueText ? "EXACT" : "MISMATCH";
+        const relation = textRelation(requirement.valueText, attribute.valueText);
+        if (relation === "equal") return "EXACT";
+        if (relation === "attribute-more-specific") return "COMPATIBLE"; // e.g. asked "windows-11", product states "windows-11-pro"
+        if (relation === "attribute-broader") return "PARTIAL"; // e.g. asked "windows-11-pro", product only states "windows-11"
+        return "MISMATCH";
+      }
+      return "UNKNOWN";
+    }
+    case "GREATER_THAN_OR_EQUAL": {
+      if (requirement.valueNum === null || attribute.valueNum === null) return "UNKNOWN";
+      if (attribute.valueNum > requirement.valueNum + NUMBER_TOLERANCE) return "UPGRADE";
+      if (attribute.valueNum >= requirement.valueNum - NUMBER_TOLERANCE) return "EXACT";
+      return "MISMATCH";
+    }
+    case "LESS_THAN_OR_EQUAL": {
+      if (requirement.valueNum === null || attribute.valueNum === null) return "UNKNOWN";
+      if (attribute.valueNum < requirement.valueNum - NUMBER_TOLERANCE) return "UPGRADE";
+      if (attribute.valueNum <= requirement.valueNum + NUMBER_TOLERANCE) return "EXACT";
+      return "MISMATCH";
+    }
+    case "BETWEEN": {
+      if (requirement.valueNum === null || requirement.valueNumMax === null || attribute.valueNum === null) return "UNKNOWN";
+      const lower = requirement.valueNum;
+      const upper = requirement.valueNumMax;
+      if (attribute.valueNum >= lower - NUMBER_TOLERANCE && attribute.valueNum <= upper + NUMBER_TOLERANCE) return "EXACT";
+      // A near miss within one requested span's width beyond either edge (floored at 0.1 so a degenerate zero-width
+      // range still has a real near-miss band) is worth a person's look, on top of the rounding tolerance above.
+      const nearMiss = Math.max(upper - lower, 0.1);
+      if (attribute.valueNum >= lower - NUMBER_TOLERANCE - nearMiss && attribute.valueNum <= upper + NUMBER_TOLERANCE + nearMiss) return "COMPATIBLE";
+      return "MISMATCH";
+    }
+    case "IN": {
+      const wanted = requirement.valueList ?? [];
+      if (wanted.length === 0 || attribute.valueList.length === 0) return "UNKNOWN";
+      const have = new Set(attribute.valueList);
+      const covered = wanted.filter((v) => have.has(v));
+      if (covered.length === wanted.length) return "EXACT";
+      if (covered.length > 0) return "PARTIAL";
+      return "MISMATCH";
+    }
+    case "CONTAINS": {
+      if (requirement.valueText === null || attribute.valueText === null) return "UNKNOWN";
+      return attribute.valueText.toLowerCase().includes(requirement.valueText.toLowerCase()) ? "EXACT" : "MISMATCH";
+    }
+  }
+}
+
+/** Every active requirement against one candidate product's active attributes. Missing attributes yield UNKNOWN, never skipped. */
+export function compareRequirementsToProduct(requirements: readonly RequirementInput[], attributes: readonly AttributeInput[]): RequirementVerdict[] {
+  const byKey = new Map(attributes.map((a) => [a.attributeKey, a]));
+  return requirements.map((r) => ({ attributeKey: r.attributeKey, importance: r.importance, verdict: verdictForRequirement(r, byKey.get(r.attributeKey) ?? null) }));
+}
+
+/**
+ * One verdict for a candidate: the worst verdict among its MUST requirements (a SHOULD/NICE mismatch never blocks or drags down
+ * the headline verdict). Falls back to the worst among all requirements only when there are no MUST rows at all.
+ */
+export function overallVerdict(perRequirement: readonly { importance: RequirementImportance; verdict: SpecVerdict }[]): SpecVerdict {
+  const musts = perRequirement.filter((p) => p.importance === "MUST");
+  const pool = musts.length > 0 ? musts : perRequirement;
+  if (pool.length === 0) return "UNKNOWN";
+  return pool.reduce((worst, p) => (SPEC_VERDICT_SEVERITY[p.verdict] < SPEC_VERDICT_SEVERITY[worst] ? p.verdict : worst), pool[0]!.verdict);
+}
+```
+
+- [ ] **Step 2: Typecheck and lint**
+
+Run: `npx tsc --noEmit` and `npx eslint src/modules/specs/verdict.ts`
+Expected: both clean (no output / no errors).
+
+- [ ] **Step 3: Verify the verdict table by hand**
+
+Create a scratch file (not committed) `scratchpad/verify-verdict.ts`:
+
+```ts
+import { verdictForRequirement, overallVerdict, type RequirementInput, type AttributeInput } from "../src/modules/specs/verdict";
+
+const req = (over: Partial<RequirementInput>): RequirementInput => ({ attributeKey: "ram_gb", operator: "EQUALS", importance: "MUST", valueText: null, valueNum: null, valueNumMax: null, valueList: null, ...over });
+const attr = (over: Partial<AttributeInput>): AttributeInput => ({ attributeKey: "ram_gb", valueText: null, valueNum: null, valueList: [], ...over });
+
+// GTE: asked >=16GB, product has 32GB -> UPGRADE
+console.log("gte-upgrade", verdictForRequirement(req({ operator: "GREATER_THAN_OR_EQUAL", valueNum: 16 }), attr({ valueNum: 32 })));
+// GTE: asked >=16GB, product has 16GB -> EXACT
+console.log("gte-exact", verdictForRequirement(req({ operator: "GREATER_THAN_OR_EQUAL", valueNum: 16 }), attr({ valueNum: 16 })));
+// GTE: asked >=16GB, product has 8GB -> MISMATCH
+console.log("gte-mismatch", verdictForRequirement(req({ operator: "GREATER_THAN_OR_EQUAL", valueNum: 16 }), attr({ valueNum: 8 })));
+// No attribute row at all -> UNKNOWN
+console.log("unknown", verdictForRequirement(req({ operator: "GREATER_THAN_OR_EQUAL", valueNum: 16 }), null));
+// BETWEEN: asked 15.3-15.9in (EXACT band 14.8-16.4 with the 0.5 rounding tolerance), product 16.7in
+// (past EXACT's 16.4 but within the near-miss band out to 16.4+nearMiss(0.6)=17.0) -> COMPATIBLE
+console.log("between-compatible", verdictForRequirement(req({ attributeKey: "screen_in", operator: "BETWEEN", valueNum: 15.3, valueNumMax: 15.9 }), attr({ attributeKey: "screen_in", valueNum: 16.7 })));
+// BETWEEN: asked 15.3-15.9in, product 17.3in (past the 17.0 near-miss edge) -> MISMATCH
+console.log("between-mismatch", verdictForRequirement(req({ attributeKey: "screen_in", operator: "BETWEEN", valueNum: 15.3, valueNumMax: 15.9 }), attr({ attributeKey: "screen_in", valueNum: 17.3 })));
+// EQUALS text, prefix pair: asked "windows-11", product "windows-11-pro" -> COMPATIBLE (product more specific)
+console.log("os-compatible", verdictForRequirement(req({ attributeKey: "os", operator: "EQUALS", valueText: "windows-11" }), attr({ attributeKey: "os", valueText: "windows-11-pro" })));
+// EQUALS text, reversed: asked "windows-11-pro", product only "windows-11" -> PARTIAL (product broader than asked)
+console.log("os-partial", verdictForRequirement(req({ attributeKey: "os", operator: "EQUALS", valueText: "windows-11-pro" }), attr({ attributeKey: "os", valueText: "windows-11" })));
+// IN: asked ["ar","en"], product only ["en"] -> PARTIAL
+console.log("kb-partial", verdictForRequirement(req({ attributeKey: "keyboard_lang", operator: "IN", valueList: ["ar", "en"] }), attr({ attributeKey: "keyboard_lang", valueList: ["en"] })));
+// overall: one EXACT MUST + one MISMATCH MUST -> MISMATCH wins (worst of the MUSTs)
+console.log("overall-mismatch", overallVerdict([{ importance: "MUST", verdict: "EXACT" }, { importance: "MUST", verdict: "MISMATCH" }]));
+// overall: a SHOULD mismatch never drags down a candidate with only-EXACT MUSTs
+console.log("overall-ignores-should", overallVerdict([{ importance: "MUST", verdict: "EXACT" }, { importance: "SHOULD", verdict: "MISMATCH" }]));
+```
+
+Run: `npx tsx scratchpad/verify-verdict.ts`
+Expected output, in order: `gte-upgrade UPGRADE`, `gte-exact EXACT`, `gte-mismatch MISMATCH`, `unknown UNKNOWN`, `between-compatible COMPATIBLE`, `between-mismatch MISMATCH`, `os-compatible COMPATIBLE`, `os-partial PARTIAL`, `kb-partial PARTIAL`, `overall-mismatch MISMATCH`, `overall-ignores-should EXACT`. Fix `verdict.ts` if any line disagrees, re-run until all match, then delete the scratch file (do not commit it).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/modules/specs/verdict.ts
+git commit -m "feat: spec-aware requirement-vs-attribute verdict engine"
+```
+
+---
+
+### Task 2: Batched product-attribute loader
+
+**Files:**
+- Modify: `src/modules/products/attributes.service.ts`
+
+**Interfaces:**
+- Consumes: `AttributeInput` from `../specs/verdict` (Task 1), `Db` from `../../core/database/tx` (existing).
+- Produces (consumed by Tasks 3-4): `loadActiveAttributes(db: Db, productIds: readonly string[]): Promise<Map<string, AttributeInput[]>>`.
+
+- [ ] **Step 1: Add `loadActiveAttributes` to `attributes.service.ts`**
+
+Add this import to the top of the file (alongside the existing `ServiceContext` import) and this function after `createParsedProductAttributes`:
+
+```ts
+import type { Db, ServiceContext } from "../../core/database/tx";
+import type { AttributeInput } from "../specs/verdict";
+```
+
+```ts
+/** Every listed product's active attributes, batched into one query — the "what does it actually have" side of a spec-verdict comparison. Products with no rows are simply absent from the map (read as UNKNOWN by the caller). */
+export async function loadActiveAttributes(db: Db, productIds: readonly string[]): Promise<Map<string, AttributeInput[]>> {
+  const result = new Map<string, AttributeInput[]>();
+  if (productIds.length === 0) return result;
+  const rows = await db.productAttribute.findMany({
+    where: { productId: { in: [...productIds] }, retractedAt: null },
+    select: { productId: true, attributeKey: true, valueText: true, valueNum: true, valueList: true },
+  });
+  for (const row of rows) {
+    const list = result.get(row.productId) ?? [];
+    list.push({ attributeKey: row.attributeKey, valueText: row.valueText, valueNum: row.valueNum === null ? null : Number(row.valueNum), valueList: row.valueList });
+    result.set(row.productId, list);
+  }
+  return result;
+}
+```
+
+(The existing `import type { ServiceContext } from "../../core/database/tx";` line becomes `import type { Db, ServiceContext } from "../../core/database/tx";` — a one-line edit, not a new import block.)
+
+- [ ] **Step 2: Typecheck and lint**
+
+Run: `npx tsc --noEmit` and `npx eslint src/modules/products/attributes.service.ts`
+Expected: both clean.
+
+- [ ] **Step 3: Verify against the project database**
+
+Create scratch file `scratchpad/verify-loader.ts` (not committed):
+
+```ts
+import { db } from "../src/core/database/client";
+import { loadActiveAttributes } from "../src/modules/products/attributes.service";
+
+async function main() {
+  // Use the phase-2 TEST product (key E14G7, six attributes) plus one arbitrary other active product, and one made-up id (no rows).
+  const testProduct = await db.product.findFirst({ where: { modelKey: "E14G7" }, select: { id: true, name: true } });
+  if (!testProduct) throw new Error("TEST product with modelKey E14G7 not found — check phase 2 status section for the current TEST product name.");
+  const other = await db.product.findFirst({ where: { id: { not: testProduct.id }, status: "ACTIVE" }, select: { id: true } });
+  const ids = [testProduct.id, other!.id, "00000000-0000-0000-0000-000000000000"];
+  const map = await loadActiveAttributes(db, ids);
+  console.log("testProduct", testProduct.name, "attributeCount", map.get(testProduct.id)?.length ?? 0);
+  console.log("otherProduct attributeCount", map.get(other!.id)?.length ?? 0);
+  console.log("madeUpId present?", map.has("00000000-0000-0000-0000-000000000000"));
+}
+main().finally(() => db.$disconnect());
+```
+
+Run: `npx tsx scratchpad/verify-loader.ts`
+Expected: `testProduct <name> attributeCount 6` (matches the phase-2 status section's "six attributes read"), `otherProduct attributeCount` some number ≥ 0, `madeUpId present? false` (confirms products with zero rows are simply absent from the map, not present with an empty array — the caller's `?? []` fallback in Task 1/3 code handles this). Delete the scratch file after (do not commit it).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/modules/products/attributes.service.ts
+git commit -m "feat: batched active-attribute loader for candidate verdicts"
+```
+
+---
+
+### Task 3: Verdict display in the candidate picker (phase 3 — shippable, auto-link unchanged)
+
+**Files:**
+- Modify: `src/modules/enquiries/queries.ts` (`getEnquiryItemCandidates`)
+- Modify: `src/lib/labels.ts` (add `SPEC_VERDICT_LABEL`)
+- Modify: `src/components/application/status-badges.tsx` (add `SPEC_VERDICT_TONE`, `SpecVerdictPill`)
+- Modify: `src/modules/enquiries/components/item-row.tsx` (candidate prop type only)
+- Modify: `src/modules/enquiries/components/product-linker.tsx` (render the verdict)
+
+**Interfaces:**
+- Consumes: `SpecVerdict`, `RequirementVerdict`, `PersistedRequirement`, `compareRequirementsToProduct`, `overallVerdict`, `toRequirementInput`, `SPEC_VERDICT_SEVERITY` from `../specs/verdict` (Task 1); `loadActiveAttributes` from `../products/attributes.service` (Task 2).
+- Produces (consumed by page.tsx, no changes needed there beyond one call-site argument): `CandidateWithVerdict = MatchCandidate & { overall: SpecVerdict | null; perRequirement: RequirementVerdict[] }`, `getEnquiryItemCandidates(item, requirements: readonly PersistedRequirement[]): Promise<CandidateWithVerdict[]>`.
+
+- [ ] **Step 1: Add `SPEC_VERDICT_LABEL` to `src/lib/labels.ts`**
+
+Add this import and this export, following the file's existing pattern exactly (one `Record<Enum, string>` per vocabulary):
+
+```ts
+import type { SpecVerdict } from "../modules/specs/verdict";
+```
+
+```ts
+export const SPEC_VERDICT_LABEL: Record<SpecVerdict, string> = {
+  EXACT: "Matches",
+  UPGRADE: "Exceeds",
+  COMPATIBLE: "Compatible",
+  PARTIAL: "Partial match",
+  MISMATCH: "Does not match",
+  UNKNOWN: "Unknown",
+};
+```
+
+- [ ] **Step 2: Add `SPEC_VERDICT_TONE` and `SpecVerdictPill` to `status-badges.tsx`**
+
+Add `SpecVerdict` to the existing top-of-file `import type { ... } from "@/generated/prisma/enums";`? No — `SpecVerdict` is not a Prisma enum, so add a second type-only import line instead, and add `SPEC_VERDICT_LABEL` to the existing `@/lib/labels` import list:
+
+```ts
+import type { SpecVerdict } from "@/modules/specs/verdict";
+```
+
+(add `SPEC_VERDICT_LABEL` into the existing multi-line `import { ... } from "@/lib/labels";` block, alphabetically between `SUPPLIER_REQUEST_STATUS_LABEL` and `VAT_STATE_LABEL`)
+
+Add, right after `MatchBadge` (after line 41):
+
+```ts
+/** How well a candidate product's own specification satisfies a requirement's MUST attributes (src/modules/specs/verdict.ts). */
+export const SPEC_VERDICT_TONE: Record<SpecVerdict, PillTone> = {
+  EXACT: "green",
+  UPGRADE: "sky",
+  COMPATIBLE: "teal",
+  PARTIAL: "amber",
+  MISMATCH: "rose",
+  UNKNOWN: "neutral",
+};
+
+export function SpecVerdictPill({ verdict, title }: { verdict: SpecVerdict; title?: string }) {
+  return (
+    <SoftPill tone={SPEC_VERDICT_TONE[verdict]} dot={verdict !== "UNKNOWN"} title={title}>
+      {SPEC_VERDICT_LABEL[verdict]}
+    </SoftPill>
+  );
+}
+```
+
+- [ ] **Step 3: Extend `getEnquiryItemCandidates` in `src/modules/enquiries/queries.ts`**
+
+Add imports:
+
+```ts
+import { compareRequirementsToProduct, overallVerdict, toRequirementInput, SPEC_VERDICT_SEVERITY, type PersistedRequirement, type RequirementVerdict, type SpecVerdict } from "../specs/verdict";
+import { loadActiveAttributes } from "../products/attributes.service";
+```
+
+Replace the existing function (currently just `return findMatchCandidates(db, {...});`) with:
+
+```ts
+export type CandidateWithVerdict = MatchCandidate & { overall: SpecVerdict | null; perRequirement: RequirementVerdict[] };
+
+export async function getEnquiryItemCandidates(
+  item: { partNumber: string | null; modelText: string | null; brandText: string | null; description: string | null },
+  requirements: readonly PersistedRequirement[],
+): Promise<CandidateWithVerdict[]> {
+  const candidates = await findMatchCandidates(db, { partNumber: item.partNumber, model: item.modelText, brandText: item.brandText, description: item.description });
+  if (candidates.length === 0 || requirements.length === 0) return candidates.map((c) => ({ ...c, overall: null, perRequirement: [] }));
+
+  const inputs = requirements.map(toRequirementInput);
+  const attributesByProduct = await loadActiveAttributes(db, candidates.map((c) => c.productId));
+  const withVerdicts = candidates.map((c) => {
+    const perRequirement = compareRequirementsToProduct(inputs, attributesByProduct.get(c.productId) ?? []);
+    return { ...c, overall: overallVerdict(perRequirement), perRequirement };
+  });
+  // Ranking: best spec verdict first (phase 3's "ranking ... in the candidate list"); ties keep findMatchCandidates' own text-strength order.
+  return withVerdicts.sort((a, b) => SPEC_VERDICT_SEVERITY[b.overall] - SPEC_VERDICT_SEVERITY[a.overall]);
+}
+```
+
+`MatchCandidate` is already imported in this file (used by the existing function signature).
+
+- [ ] **Step 4: Update the one call site — `src/app/(workspace)/enquiries/[id]/page.tsx`**
+
+Change:
+
+```ts
+selected && selected.reviewStatus === "PENDING" ? getEnquiryItemCandidates(selected) : Promise.resolve([])
+```
+
+to:
+
+```ts
+selected && selected.reviewStatus === "PENDING" ? getEnquiryItemCandidates(selected, selected.requirements) : Promise.resolve([])
+```
+
+`selected.requirements` already exists on `EnquiryDetail`'s item shape (the active requirements `getEnquiry`'s Prisma `include` already loads) — no new query.
+
+- [ ] **Step 5: Update `item-row.tsx`'s prop type**
+
+Change the import and prop type:
+
+```ts
+import type { MatchCandidate } from "@/modules/products/matching";
+```
+becomes
+```ts
+import type { CandidateWithVerdict } from "../queries";
+```
+
+and `candidates: MatchCandidate[];` (in the destructured props type) becomes `candidates: CandidateWithVerdict[];`. The JSX itself (`candidates={candidates}` passed into `EnquiryProductLinker`) does not change.
+
+- [ ] **Step 6: Render the verdict in `product-linker.tsx`**
+
+Add imports:
+
+```ts
+import { SpecVerdictPill } from "@/components/application/status-badges";
+import { requirementLabel } from "@/modules/specs/format";
+import { SPEC_VERDICT_LABEL } from "@/lib/labels";
+import type { CandidateWithVerdict } from "../queries";
+import type { RequirementVerdict } from "@/modules/specs/verdict";
+```
+
+Change the `candidates` prop type from `MatchCandidate[]` to `CandidateWithVerdict[]` (both in the destructuring signature and the inline type block).
+
+Change the `Row` type:
+
+```ts
+type Row = { id: string; name: string; partNumber: string | null; brandName: string | null; badge?: MatchCandidate["strength"]; overall?: SpecVerdict | null; perRequirement?: RequirementVerdict[] };
+```
+
+(add `import type { SpecVerdict } from "@/modules/specs/verdict";` alongside the other new imports — or fold it into the `RequirementVerdict` import line as `import type { RequirementVerdict, SpecVerdict } from "@/modules/specs/verdict";`)
+
+Add this helper above the component:
+
+```ts
+const specExplanation = (perRequirement: RequirementVerdict[]): string | undefined =>
+  perRequirement.length ? perRequirement.map((p) => `${requirementLabel(p.attributeKey)}: ${SPEC_VERDICT_LABEL[p.verdict]}`).join(" · ") : undefined;
+```
+
+Change the `rows` construction:
+
+```ts
+const rows: Row[] = [
+  ...candidates.map((c) => ({ id: c.productId, name: c.name, partNumber: c.partNumber, brandName: c.brandName, badge: c.strength, overall: c.overall, perRequirement: c.perRequirement })),
+  ...results.filter((r) => !candidates.some((c) => c.productId === r.id)),
+].filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i && r.id !== current?.id);
+```
+
+Change the candidate row's action cell (currently `<div className="flex shrink-0 items-center gap-2">{row.badge ? ... : null}{linkForm(...)}</div>`) to:
+
+```tsx
+<div className="flex shrink-0 items-center gap-2">
+  {row.overall ? <SpecVerdictPill verdict={row.overall} title={specExplanation(row.perRequirement ?? [])} /> : null}
+  {row.badge ? <Badge variant={STRENGTH_LABEL[row.badge].variant}>{STRENGTH_LABEL[row.badge].label}</Badge> : null}
+  {linkForm(row.id, "Link", row.badge === "EXACT" ? "default" : "outline")}
+</div>
+```
+
+- [ ] **Step 7: Typecheck and lint**
+
+Run: `npx tsc --noEmit` and `npx eslint src/lib/labels.ts src/components/application/status-badges.tsx src/modules/enquiries/queries.ts src/modules/enquiries/components/item-row.tsx src/modules/enquiries/components/product-linker.tsx "src/app/(workspace)/enquiries/[id]/page.tsx"`
+Expected: both clean.
+
+- [ ] **Step 8: Verify against the project database (rolled-back transaction)**
+
+Create scratch file `scratchpad/verify-candidates.ts` (not committed):
+
+```ts
+import { db } from "../src/core/database/client";
+import { getEnquiryItemCandidates } from "../src/modules/enquiries/queries";
+
+async function main() {
+  // Reuse the phase-1 TEST enquiry (ENQ-00004) if it still has a PENDING item with requirements; otherwise report and stop.
+  const enquiry = await db.enquiry.findFirst({ where: { number: 4 }, select: { id: true, items: { where: { reviewStatus: "PENDING" }, include: { requirements: { where: { retractedAt: null } } } } } });
+  if (!enquiry || enquiry.items.length === 0) throw new Error("ENQ-00004 has no PENDING item left — pick another enquiry id with a PENDING item that has requirements and edit this script's `where`.");
+  const item = enquiry.items[0]!;
+  console.log("item", item.description ?? item.modelText, "requirementCount", item.requirements.length);
+  const candidates = await getEnquiryItemCandidates(item, item.requirements);
+  for (const c of candidates) console.log(c.name, "strength", c.strength, "overall", c.overall, "perRequirement", c.perRequirement.map((p) => `${p.attributeKey}:${p.verdict}`).join(","));
+}
+main().finally(() => db.$disconnect());
+```
+
+Run: `npx tsx scratchpad/verify-candidates.ts`
+Expected: one line per candidate, each showing a plausible `overall` derived from its `perRequirement` list (e.g. a candidate with any MUST `MISMATCH` shows `overall MISMATCH`), and candidates ordered best-`overall`-first. Cross-check two or three lines by hand against the verdict rules from Task 1. Delete the scratch file after (do not commit it).
+
+- [ ] **Step 9: Browser check (flag if blocked, per the project's own "not verified in a browser" convention)**
+
+Sign in, open ENQ-00004 (or another enquiry with a PENDING, requirement-bearing item), expand the item, confirm the picker shows a verdict pill next to the existing Exact/Probable/Possible badge on each candidate, and that hovering it shows the per-requirement breakdown. If sign-in is blocked in this session the way it was for phases 1-2, record that explicitly in the Status write-up below instead of skipping the note.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add src/lib/labels.ts src/components/application/status-badges.tsx src/modules/enquiries/queries.ts "src/app/(workspace)/enquiries/[id]/page.tsx" src/modules/enquiries/components/item-row.tsx src/modules/enquiries/components/product-linker.tsx
+git commit -m "feat: rank and explain candidate products by spec match (phase 3, shadow mode)"
+```
+
+---
+
+### Task 4: Auto-link gating (phase 4 — changes auto-link behavior)
+
+**Files:**
+- Modify: `src/modules/products/matching.ts` (add `pickAutoLinkWithSpecs`)
+- Modify: `src/modules/enquiries/service.ts` (`createEnquiry`)
+- Modify: `src/modules/enquiries/item.service.ts` (`addManualEnquiryItem`)
+
+**Interfaces:**
+- Consumes: `compareRequirementsToProduct`, `overallVerdict`, `RequirementInput` from `../specs/verdict` (Task 1); `loadActiveAttributes` from `./attributes.service` (Task 2); existing `pickAutoLink`, `MatchCandidate` (same file); existing `ProposedRequirement` from `../specs/types` (already used by both call sites today via `requirement.service.ts`'s re-export path — `ProposedRequirement` structurally satisfies `RequirementInput`, no conversion needed).
+- Produces: `pickAutoLinkWithSpecs(db: Db, candidates: readonly MatchCandidate[], requirements: readonly RequirementInput[]): Promise<MatchCandidate | null>`.
+
+- [ ] **Step 1: Add `pickAutoLinkWithSpecs` to `src/modules/products/matching.ts`**
+
+Add imports at the top of the file:
+
+```ts
+import { compareRequirementsToProduct, overallVerdict, type RequirementInput } from "../specs/verdict";
+import { loadActiveAttributes } from "./attributes.service";
+```
+
+Add after the existing `pickAutoLink` function:
+
+```ts
+/**
+ * `pickAutoLink`, redefined for phase 4: the same single-strong-match pick, but vetoed when a MUST requirement comes back
+ * MISMATCH or UNKNOWN against the picked candidate's own attributes — "conflicts and unknown must-have specifications force
+ * human review" (docs/plans/active/CURRENT.md). An item with no MUST requirements (or no requirements at all) is unaffected:
+ * this never queries the database unless `pickAutoLink` already found something to veto.
+ */
+export async function pickAutoLinkWithSpecs(db: Db, candidates: readonly MatchCandidate[], requirements: readonly RequirementInput[]): Promise<MatchCandidate | null> {
+  const link = pickAutoLink(candidates);
+  if (!link) return null;
+  const musts = requirements.filter((r) => r.importance === "MUST");
+  if (musts.length === 0) return link;
+
+  const attributesByProduct = await loadActiveAttributes(db, [link.productId]);
+  const perRequirement = compareRequirementsToProduct(musts, attributesByProduct.get(link.productId) ?? []);
+  const overall = overallVerdict(perRequirement);
+  return overall === "MISMATCH" || overall === "UNKNOWN" ? null : link;
+}
+```
+
+- [ ] **Step 2: Wire it into `createEnquiry` (`src/modules/enquiries/service.ts`)**
+
+Change the per-item loop (currently: compute `candidates`, then `const link = pickAutoLink(candidates);`, then build `fields`, then create the item, then separately propose requirements from `fields`) to compute the proposed requirements once and reuse them for both the gating check and the requirement rows:
+
+```ts
+import { findMatchCandidates, pickAutoLinkWithSpecs } from "../products/matching";
+```
+
+(replaces the existing `import { findMatchCandidates, pickAutoLink } from "../products/matching";`)
+
+```ts
+for (const item of parsed.items) {
+  const candidates = await findMatchCandidates(c.db, { partNumber: item.partNumber, model: item.modelText, brandText: item.brandText, description: item.description });
+  const { extractedData, confidence, ...fields } = item;
+  const proposedRequirements = proposeRequirementsForItem({ sourceText: fields.sourceText, description: fields.description, specText: fields.specText });
+  const link = await pickAutoLinkWithSpecs(c.db, candidates, proposedRequirements);
+  // The parser's original values are kept write-once in extracted_data, so the workspace can always show "original vs corrected".
+  const original = {
+    description: fields.description,
+    brandText: fields.brandText,
+    familyText: fields.familyText,
+    modelText: fields.modelText,
+    partNumber: fields.partNumber,
+    specText: fields.specText,
+    quantity: fields.quantity,
+  };
+  const created = await c.db.enquiryItem.create({
+    data: {
+      ...fields,
+      enquiryId: enquiry.id,
+      origin: "PARSER",
+      extractionConfidence: confidence,
+      extractedData: { ...extractedData, fields: original } as Prisma.InputJsonValue,
+      productId: link?.productId ?? null,
+      matchBasis: link?.basis ?? null,
+    },
+  });
+  requirementCount += await createParsedRequirements(c, created.id, proposedRequirements);
+}
+```
+
+(This is the same loop body as today, reordered so `proposedRequirements` is computed once before `link`, then reused at the bottom instead of calling `proposeRequirementsForItem` a second time.)
+
+- [ ] **Step 3: Wire it into `addManualEnquiryItem` (`src/modules/enquiries/item.service.ts`)**
+
+```ts
+import { findMatchCandidates, pickAutoLinkWithSpecs } from "../products/matching";
+```
+
+(replaces the existing `import { findMatchCandidates, pickAutoLink } from "../products/matching";`)
+
+Change the function body from:
+
+```ts
+const candidates = await findMatchCandidates(c.db, { partNumber: fields.partNumber, model: fields.modelText, brandText: fields.brandText, description: fields.description });
+const link = pickAutoLink(candidates);
+const item = await c.db.enquiryItem.create({
+  data: {
+    ...fields,
+    enquiryId,
+    position: (last._max.position ?? 0) + 1,
+    sourceText: sourceText ?? "(added by hand)",
+    origin: "MANUAL",
+    productId: link?.productId ?? null,
+    matchBasis: link?.basis ?? null,
+  },
+});
+const requirements = await createParsedRequirements(c, item.id, proposeRequirementsForItem(item));
+```
+
+to:
+
+```ts
+const candidates = await findMatchCandidates(c.db, { partNumber: fields.partNumber, model: fields.modelText, brandText: fields.brandText, description: fields.description });
+const resolvedSourceText = sourceText ?? "(added by hand)";
+const proposedRequirements = proposeRequirementsForItem({ sourceText: resolvedSourceText, description: fields.description, specText: fields.specText });
+const link = await pickAutoLinkWithSpecs(c.db, candidates, proposedRequirements);
+const item = await c.db.enquiryItem.create({
+  data: {
+    ...fields,
+    enquiryId,
+    position: (last._max.position ?? 0) + 1,
+    sourceText: resolvedSourceText,
+    origin: "MANUAL",
+    productId: link?.productId ?? null,
+    matchBasis: link?.basis ?? null,
+  },
+});
+const requirements = await createParsedRequirements(c, item.id, proposedRequirements);
+```
+
+- [ ] **Step 4: Typecheck and lint**
+
+Run: `npx tsc --noEmit` and `npx eslint src/modules/products/matching.ts src/modules/enquiries/service.ts src/modules/enquiries/item.service.ts`
+Expected: both clean.
+
+- [ ] **Step 5: Verify with a rolled-back transaction against the project database**
+
+Create scratch file `scratchpad/verify-gating.ts` (not committed) — this exercises all five Review Focus cases in one run:
+
+```ts
+import { db } from "../src/core/database/client";
+import { pickAutoLinkWithSpecs } from "../src/modules/products/matching";
+import { pickAutoLink, type MatchCandidate } from "../src/modules/products/matching";
+import type { RequirementInput } from "../src/modules/specs/verdict";
+
+async function main() {
+  const testProduct = await db.product.findFirst({ where: { modelKey: "E14G7" }, select: { id: true, name: true } });
+  if (!testProduct) throw new Error("TEST product with modelKey E14G7 not found.");
+  const candidate: MatchCandidate = { productId: testProduct.id, name: testProduct.name, partNumber: null, brandName: null, basis: "MODEL", strength: "EXACT" };
+
+  // Case A: no requirements at all -> behaves exactly like plain pickAutoLink (still returns the candidate).
+  const noReqs: RequirementInput[] = [];
+  const a = await pickAutoLinkWithSpecs(db, [candidate], noReqs);
+  console.log("A: no requirements -> matches plain pickAutoLink?", a?.productId === pickAutoLink([candidate])?.productId);
+
+  // Case B: a MUST requirement the product satisfies (ram_gb GTE 8, product known to have >=8) -> still linked.
+  const satisfied: RequirementInput[] = [{ attributeKey: "ram_gb", operator: "GREATER_THAN_OR_EQUAL", importance: "MUST", valueText: null, valueNum: 8, valueNumMax: null, valueList: null }];
+  const b = await pickAutoLinkWithSpecs(db, [candidate], satisfied);
+  console.log("B: satisfied MUST -> still linked?", b?.productId === testProduct.id);
+
+  // Case C: a MUST requirement the product cannot satisfy (absurdly high RAM) -> blocked (null).
+  const impossible: RequirementInput[] = [{ attributeKey: "ram_gb", operator: "GREATER_THAN_OR_EQUAL", importance: "MUST", valueText: null, valueNum: 999999, valueNumMax: null, valueList: null }];
+  const c = await pickAutoLinkWithSpecs(db, [candidate], impossible);
+  console.log("C: impossible MUST -> blocked?", c === null);
+
+  // Case D: a MUST requirement on an attribute the product has no row for -> blocked (UNKNOWN).
+  const unknownKey: RequirementInput[] = [{ attributeKey: "keyboard_lang", operator: "IN", importance: "MUST", valueText: null, valueNum: null, valueNumMax: null, valueList: ["ar"] }];
+  const d = await pickAutoLinkWithSpecs(db, [candidate], unknownKey);
+  console.log("D: unknown MUST attribute -> blocked?", d === null, "(only true if the TEST product genuinely has no keyboard_lang row — check case output against Task 2's six-attribute list first)");
+
+  // Case E: pickAutoLink already returns null for an ambiguous set (two EXACT candidates) -> never touches the database.
+  const ambiguous: MatchCandidate[] = [candidate, { ...candidate, productId: "11111111-1111-1111-1111-111111111111" }];
+  const e = await pickAutoLinkWithSpecs(db, ambiguous, satisfied);
+  console.log("E: ambiguous text match -> short-circuits to null?", e === null);
+}
+main().finally(() => db.$disconnect());
+```
+
+Run: `npx tsx scratchpad/verify-gating.ts`
+Expected: `A: ... true`, `B: ... true`, `C: ... true`, `D: ... true` (or `false` with a note if the TEST product does in fact have a `keyboard_lang` row — check Task 2's Step 3 output first and swap `unknownKey`'s `attributeKey` for one confirmed absent), `E: ... true`. Then separately, run the full real-enquiry flow inside a rolled-back transaction the same way the phase-5 broadcast work verified `resolveProductForItem` (see "Broadcast variant safety, parser v5" above): wrap a call to `createEnquiry` with a real multi-line `TEST` request in `db.$transaction(async (tx) => { ...; throw new RollbackSignal(); })` (or the project's existing rolled-back-transaction helper if `scripts/` already has one — check before writing a new one) and confirm at least one line that would have auto-linked under the old `pickAutoLink` is now left unlinked because of a MUST conflict, with everything else unchanged; nothing is saved. Delete the scratch file after (do not commit it).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/modules/products/matching.ts src/modules/enquiries/service.ts src/modules/enquiries/item.service.ts
+git commit -m "feat: gate enquiry auto-link on MUST requirement conflicts (phase 4)"
+```
+
+---
+
+### Task 5: Update docs and this plan's Status
+
+**Files:**
+- Modify: `docs/plans/active/CURRENT.md` (this file: replace phase 3/4 bullets' "not built" framing with a dated Status section, following the exact pattern of the phase 1/2 Status sections above)
+- Modify: `docs/modules/ENQUIRIES.md` (the "Phase 1 changes no matching" line, now stale)
+- Modify: `docs/modules/PRODUCTS.md` (the "Matching does not use these yet (next phase)" line, now stale)
+
+- [ ] **Step 1: Write the Status section**
+
+After Task 4 is verified, add a new section here (in this file) titled `## Structured requirements, phases 3-4 status (<the actual date>)`, following the phase 1/2 sections' exact style: what was built, the exact verification numbers from Tasks 1-4's Step "Verify" outputs (candidate counts, verdicts observed, the gating cases A-E results), and an explicit "Not verified in a browser" line only if Task 3 Step 9 was in fact blocked.
+
+- [ ] **Step 2: Update `docs/modules/ENQUIRIES.md`**
+
+Change the line "**Phase 1 changes no matching**: `findMatchCandidates` and `pickAutoLink` are untouched. Product attributes, spec-aware candidate comparison and auto-link gating are the next phases (`docs/plans/active/CURRENT.md`)." to reflect that phases 3-4 are now built: candidate comparison via `src/modules/specs/verdict.ts`, ranking and explanation in the picker (`product-linker.tsx`), and `pickAutoLinkWithSpecs` (`products/matching.ts`) gating both enquiry auto-link call sites on MUST-requirement conflicts.
+
+- [ ] **Step 3: Update `docs/modules/PRODUCTS.md`**
+
+Change "**Matching does not use these yet (next phase)**" (end of the "Structured specifications" paragraph) to state that `pickAutoLinkWithSpecs` now uses them for enquiry auto-link gating, with a pointer to `docs/plans/active/CURRENT.md`'s phases 3-4 status section.
+
+- [ ] **Step 4: Typecheck and lint the whole project one more time**
+
+Run: `npx tsc --noEmit` and `npx eslint .`
+Expected: both clean — confirms nothing outside the touched files regressed.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/plans/active/CURRENT.md docs/modules/ENQUIRIES.md docs/modules/PRODUCTS.md
+git commit -m "docs: record structured requirements phases 3-4 as built"
+```
+
 ## Broadcast variant safety, parser v5 (2026-09-27)
 
 From the first real Red Data Computer list: parser version 5 (signature block skipped and read, price/currency false positive fixed, glued CPU+RAM split, INCOMING stock, tower category) and variant-safe product resolution for broadcast lines (`resolveProductForItem`). Verified by running the whole list through `createBroadcast` inside a rolled-back transaction on the project database: 6 lines gave 6 distinct products (the three Dell T2 lines sharing FCT2250 stayed three variants); nothing was saved. Existing broadcast, product and lib tests pass (124). This is phase 5 of the plan, built early because real data showed the collapse.
