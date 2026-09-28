@@ -1,5 +1,6 @@
-import type { ServiceContext } from "../../core/database/tx";
+import type { Db, ServiceContext } from "../../core/database/tx";
 import type { ProposedAttribute } from "../specs/extract";
+import type { AttributeInput } from "../specs/verdict";
 import { extractAttributes } from "../specs/extract";
 
 /**
@@ -36,4 +37,20 @@ export async function createParsedProductAttributes(c: ServiceContext, productId
     })),
   });
   return result.count;
+}
+
+/** Every listed product's active attributes, batched into one query — the "what does it actually have" side of a spec-verdict comparison. Products with no rows are simply absent from the map (read as UNKNOWN by the caller). */
+export async function loadActiveAttributes(db: Db, productIds: readonly string[]): Promise<Map<string, AttributeInput[]>> {
+  const result = new Map<string, AttributeInput[]>();
+  if (productIds.length === 0) return result;
+  const rows = await db.productAttribute.findMany({
+    where: { productId: { in: [...productIds] }, retractedAt: null },
+    select: { productId: true, attributeKey: true, valueText: true, valueNum: true, valueList: true },
+  });
+  for (const row of rows) {
+    const list = result.get(row.productId) ?? [];
+    list.push({ attributeKey: row.attributeKey, valueText: row.valueText, valueNum: row.valueNum === null ? null : Number(row.valueNum), valueList: row.valueList });
+    result.set(row.productId, list);
+  }
+  return result;
 }
