@@ -65,8 +65,16 @@ export function toRequirementInput(r: PersistedRequirement): RequirementInput {
   };
 }
 
-/** Numeric equality tolerance, matching `compare.ts`'s existing epsilon for the same reason (rounding in stored decimals). */
-const NUMBER_TOLERANCE = 0.5;
+/**
+ * Numeric equality tolerance per attribute, matching each attribute's real-world precision. GB-scale keys keep
+ * `compare.ts`'s rounding-error tolerance (0.5) — harmless there. `screen_in` needs a much tighter one: real screen
+ * sizes cluster every ~0.3-1.0 inches (13.3 / 14 / 15.6 / 16 is typical), and the GB-scale tolerance made visually
+ * different screen sizes register as an EXACT match (verified against the project catalog: a "16 inch" ask read a
+ * 15.6" product as EXACT).
+ */
+const NUMBER_TOLERANCE_BY_KEY: Record<string, number> = { screen_in: 0.05 };
+const DEFAULT_NUMBER_TOLERANCE = 0.5;
+const toleranceFor = (attributeKey: string): number => NUMBER_TOLERANCE_BY_KEY[attributeKey] ?? DEFAULT_NUMBER_TOLERANCE;
 
 /** Attributes where a shorter value is a less specific form of a longer one — same constant/logic as `compare.ts`. */
 const PREFIX_KEYS = new Set(["cpu", "os"]);
@@ -88,7 +96,7 @@ export function verdictForRequirement(requirement: RequirementInput, attribute: 
     case "EQUALS": {
       if (requirement.valueNum !== null) {
         if (attribute.valueNum === null) return "UNKNOWN";
-        return Math.abs(attribute.valueNum - requirement.valueNum) < NUMBER_TOLERANCE ? "EXACT" : "MISMATCH";
+        return Math.abs(attribute.valueNum - requirement.valueNum) < toleranceFor(requirement.attributeKey) ? "EXACT" : "MISMATCH";
       }
       if (requirement.valueText !== null) {
         if (attribute.valueText === null) return "UNKNOWN";
@@ -103,25 +111,26 @@ export function verdictForRequirement(requirement: RequirementInput, attribute: 
     }
     case "GREATER_THAN_OR_EQUAL": {
       if (requirement.valueNum === null || attribute.valueNum === null) return "UNKNOWN";
-      if (attribute.valueNum > requirement.valueNum + NUMBER_TOLERANCE) return "UPGRADE";
-      if (attribute.valueNum >= requirement.valueNum - NUMBER_TOLERANCE) return "EXACT";
+      if (attribute.valueNum > requirement.valueNum + toleranceFor(requirement.attributeKey)) return "UPGRADE";
+      if (attribute.valueNum >= requirement.valueNum - toleranceFor(requirement.attributeKey)) return "EXACT";
       return "MISMATCH";
     }
     case "LESS_THAN_OR_EQUAL": {
       if (requirement.valueNum === null || attribute.valueNum === null) return "UNKNOWN";
-      if (attribute.valueNum < requirement.valueNum - NUMBER_TOLERANCE) return "UPGRADE";
-      if (attribute.valueNum <= requirement.valueNum + NUMBER_TOLERANCE) return "EXACT";
+      if (attribute.valueNum < requirement.valueNum - toleranceFor(requirement.attributeKey)) return "UPGRADE";
+      if (attribute.valueNum <= requirement.valueNum + toleranceFor(requirement.attributeKey)) return "EXACT";
       return "MISMATCH";
     }
     case "BETWEEN": {
       if (requirement.valueNum === null || requirement.valueNumMax === null || attribute.valueNum === null) return "UNKNOWN";
       const lower = requirement.valueNum;
       const upper = requirement.valueNumMax;
-      if (attribute.valueNum >= lower - NUMBER_TOLERANCE && attribute.valueNum <= upper + NUMBER_TOLERANCE) return "EXACT";
+      const tolerance = toleranceFor(requirement.attributeKey);
+      if (attribute.valueNum >= lower - tolerance && attribute.valueNum <= upper + tolerance) return "EXACT";
       // A near miss within one requested span's width beyond either edge (floored at 0.1 so a degenerate zero-width
       // range still has a real near-miss band) is worth a person's look, on top of the rounding tolerance above.
       const nearMiss = Math.max(upper - lower, 0.1);
-      if (attribute.valueNum >= lower - NUMBER_TOLERANCE - nearMiss && attribute.valueNum <= upper + NUMBER_TOLERANCE + nearMiss) return "COMPATIBLE";
+      if (attribute.valueNum >= lower - tolerance - nearMiss && attribute.valueNum <= upper + tolerance + nearMiss) return "COMPATIBLE";
       return "MISMATCH";
     }
     case "IN": {
@@ -155,4 +164,9 @@ export function overallVerdict(perRequirement: readonly { importance: Requiremen
   const pool = musts.length > 0 ? musts : perRequirement;
   if (pool.length === 0) return "UNKNOWN";
   return pool.reduce((worst, p) => (SPEC_VERDICT_SEVERITY[p.verdict] < SPEC_VERDICT_SEVERITY[worst] ? p.verdict : worst), pool[0]!.verdict);
+}
+
+/** Verdicts that must force a human to review rather than auto-link: an unsatisfied, partially-satisfied, or unresolved MUST requirement. */
+export function blocksAutoLink(verdict: SpecVerdict): boolean {
+  return verdict === "MISMATCH" || verdict === "UNKNOWN" || verdict === "PARTIAL";
 }

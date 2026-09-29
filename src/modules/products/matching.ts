@@ -1,7 +1,7 @@
 import type { Db } from "../../core/database/tx";
 import type { MatchBasis } from "../../generated/prisma/enums";
 import { normalizeCode, normalizeCodeOrNull, normalizeName } from "../../lib/normalize";
-import { compareRequirementsToProduct, overallVerdict, type RequirementInput } from "../specs/verdict";
+import { blocksAutoLink, compareRequirementsToProduct, overallVerdict, type RequirementInput } from "../specs/verdict";
 import { loadActiveAttributes } from "./attributes.service";
 
 /**
@@ -101,7 +101,7 @@ export function pickAutoLink(candidates: readonly MatchCandidate[]): MatchCandid
 
 /**
  * `pickAutoLink`, redefined for phase 4: the same single-strong-match pick, but vetoed when a MUST requirement comes back
- * MISMATCH or UNKNOWN against the picked candidate's own attributes — "conflicts and unknown must-have specifications force
+ * MISMATCH, UNKNOWN or PARTIAL (see `blocksAutoLink`) against the picked candidate's own attributes — "conflicts and unknown must-have specifications force
  * human review" (docs/plans/active/CURRENT.md). An item with no MUST requirements (or no requirements at all) is unaffected:
  * this never queries the database unless `pickAutoLink` already found something to veto.
  */
@@ -114,5 +114,5 @@ export async function pickAutoLinkWithSpecs(db: Db, candidates: readonly MatchCa
   const attributesByProduct = await loadActiveAttributes(db, [link.productId]);
   const perRequirement = compareRequirementsToProduct(musts, attributesByProduct.get(link.productId) ?? []);
   const overall = overallVerdict(perRequirement);
-  return overall === "MISMATCH" || overall === "UNKNOWN" ? null : link;
+  return blocksAutoLink(overall) ? null : link;
 }

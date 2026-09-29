@@ -202,8 +202,13 @@ export async function getEnquiryItemCandidates(
     const perRequirement = compareRequirementsToProduct(inputs, attributesByProduct.get(c.productId) ?? []);
     return { ...c, overall: overallVerdict(perRequirement), perRequirement };
   });
-  // Ranking: best spec verdict first (phase 3's "ranking ... in the candidate list"); ties keep findMatchCandidates' own text-strength order.
-  return withVerdicts.sort((a, b) => SPEC_VERDICT_SEVERITY[b.overall] - SPEC_VERDICT_SEVERITY[a.overall]);
+  // Ranking: text-match strength first — an exact part-number match is the strongest identity signal this system has,
+  // and an attribute-coverage gap must never bury it below a weaker text match. Spec verdict is the tie-breaker within
+  // a strength tier (phase 3's "ranking ... in the candidate list").
+  const strengthRank: Record<MatchCandidate["strength"], number> = { EXACT: 2, PROBABLE: 1, POSSIBLE: 0 };
+  return withVerdicts.sort(
+    (a, b) => strengthRank[b.strength] - strengthRank[a.strength] || SPEC_VERDICT_SEVERITY[b.overall] - SPEC_VERDICT_SEVERITY[a.overall],
+  );
 }
 
 /** Active users for the "Owner" picker. */
