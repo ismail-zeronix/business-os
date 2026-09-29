@@ -1,6 +1,7 @@
 import { ErrorState } from "@/components/application/states";
 import { getServiceContext, requireActor } from "@/core/permissions/actor";
 import { DocTree } from "@/modules/knowledge/components/doc-tree";
+import { TabBar } from "@/modules/knowledge/components/tab-bar";
 import { listKnowledgeTree, type KnowledgeNode } from "@/modules/knowledge/service";
 
 /**
@@ -24,7 +25,10 @@ export default async function KnowledgeLayout({ children }: LayoutProps<"/knowle
           {tree === null ? <ErrorState title="Could not read the knowledge pages" message="Try again in a moment." /> : <DocTree tree={tree} />}
         </div>
       </aside>
-      {children}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <TabBar />
+        {children}
+      </div>
     </div>
   );
 }

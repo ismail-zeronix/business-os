@@ -1,4 +1,4 @@
-import { ChevronRight, FileText } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -26,8 +26,9 @@ function SourceView({ content }: { content: string }) {
 }
 
 /**
- * The right-hand side of the Knowledge screen, laid out like a code editor (read only): a file tab, a path breadcrumb with a
- * Preview / Source switch, the content, and a status bar. Fills the height beside the explorer; only the content scrolls.
+ * The right-hand side of the Knowledge screen, laid out like a code editor (read only): a path breadcrumb with a Preview / Source switch,
+ * the content, and a status bar. The open-tabs strip above this pane is `TabBar`, in the layout. Fills the height beside the explorer;
+ * only the content scrolls.
  */
 export function EditorPane({ doc, view }: { doc: KnowledgePage; view: DocView }) {
   const segments = doc.path.split("/");
@@ -35,13 +36,6 @@ export function EditorPane({ doc, view }: { doc: KnowledgePage; view: DocView })
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-      <div role="tablist" aria-label="Open file" className="flex h-9 shrink-0 items-stretch border-b bg-zinc-50/70">
-        <div role="tab" aria-selected className="flex max-w-full items-center gap-2 border-r border-t-2 border-t-brand bg-background px-3 text-[13px]">
-          <FileText className="size-3.5 shrink-0 text-brand" strokeWidth={1.5} aria-hidden />
-          <span className="truncate">{displayName(doc.name)}</span>
-        </div>
-      </div>
-
       <div className="flex h-9 shrink-0 items-center justify-between gap-3 border-b px-3">
         <nav aria-label="File path" className="flex min-w-0 items-center gap-0.5 overflow-hidden text-xs text-muted-foreground">
           {segments.map((segment, i) => (
