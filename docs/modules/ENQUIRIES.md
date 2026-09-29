@@ -50,31 +50,30 @@ Each item also carries structured specification requirements (`enquiry_requireme
 ## Email scoring (`email/scoring/config.ts`)
 Weights follow the master plan: subject RFQ phrase +30, procurement intent +15, known customer +15, known brand +10, category +10, product detail +10, quantity +5, RFQ/BOQ attachment name +10; marketing -40, recruitment -40, newsletter -30, automated sender -30, known supplier -30 (a price list, not an enquiry). Clamped 0-100. Bands: 70+ Likely, 40-69 Review, below 40 Low (stored, hidden by default). Every rule that fired is stored with the email and shown in the drawer. **Tune the phrase lists and weights after looking at real mail.**
 
-## Sourcing requests (`src/modules/sourcing`, built 2026-09-21)
-The **Sourcing** tab of an enquiry: ask suppliers about the confirmed requirements and keep their answers as evidence.
+## Sourcing requests (`src/modules/sourcing`, built 2026-09-21, matching-first 2026-09-29)
+The **Sourcing** tab of an enquiry: choose a supplier directly from existing price/stock history where one exists, or ask a supplier who has never quoted these requirements and keep their answer as evidence.
 
 ```
-Confirmed requirements -> Add supplier -> Prepare message (edit, Copy) -> you send it -> Mark sent
-                                                                                         |
-Record reply (opens /broadcasts/new for that supplier, linked to the request) <----------+
-  -> the existing broadcast review: link a product, Confirm -> price and stock observations
-  -> the enquiry's Supplier intelligence and the product page show them, with the reply as evidence
+Confirmed requirements -> Matching suppliers (price/stock already on record) -> Choose
+                        -> or: Add supplier -> Prepare message (edit, Copy) -> you send it -> Mark sent
+                                                                                              |
+                        Record reply (opens /broadcasts/new for that supplier, linked to the request) <-+
+                          -> the existing broadcast review: link a product, Confirm -> price and stock observations
+                          -> now shows up as a match, same as any other supplier
 ```
 
-- **One request per supplier per enquiry** (`supplier_requests`). Statuses: Draft, Sent (= waiting), Replied, No stock, Declined. Replied is set automatically when a reply is recorded; No stock / Declined are set by a person (with a note) and create **no observation**; Reopen returns them to Sent (or Draft if never sent).
-- **Nothing is sent by the application.** It builds the text (`message.ts`, a pure function); a person copies it into their own email or WhatsApp and presses **Mark sent**, which stores the exact text, channel and time (write-once in the database).
+- **Matching suppliers** (top of the tab, `compare-table.tsx`): one row per confirmed requirement, one column per supplier who already has a latest price or stock for the requirement's product (`getProductsIntelligence`) or is already on the enquiry — whichever is true first. A supplier found purely from history is labelled "Not asked yet" and has no `supplier_requests` row until chosen. **Choose** works directly here: choosing a supplier with no existing request silently starts one in Draft (`decision.service.ts::chooseSupplier`, audited as `supplier_request.added` then `procurement_decision.chosen`) — sending a message is never required for a known price. Nothing is ranked and there is no "best price": currency and VAT state make prices non-comparable.
+  - The price and stock shown in the cell are saved with the choice, as pointers to the immutable observations. **One active choice per requirement**: choosing another supplier replaces it, **Clear** withdraws it; the old record is retracted, never edited or deleted.
+  - The chosen cell shows **Chosen**, the note, who and when. If the supplier has quoted differently since, a **When chosen** block shows the original price and stock with their evidence.
+  - A supplier marked No stock or Declined cannot be chosen. A requirement with no linked product says "Link a product to compare" (it can still be chosen; price and stock stay empty). An archived enquiry shows the choices read-only.
+  - Service: `chooseSupplier`, `clearChoice` (`decision.service.ts`). Data: `docs/architecture/DATA_MODEL.md` section 13. It does not change the enquiry status.
+- **Asked suppliers** (below Matching suppliers): every `supplier_requests` row on the enquiry — whether explicitly added via **Add supplier**, or started silently by a Choose above. **One request per supplier per enquiry** (`supplier_requests`). Statuses: Draft, Sent (= waiting), Replied, No stock, Declined. Replied is set automatically when a reply is recorded; No stock / Declined are set by a person (with a note) and create **no observation**; Reopen returns them to Sent (or Draft if never sent).
+- **Add supplier** is for cold outreach — a supplier with no known match yet. **Nothing is sent by the application.** It builds the text (`message.ts`, a pure function); a person copies it into their own email or WhatsApp and presses **Mark sent**, which stores the exact text, channel and time (write-once in the database).
 - **The message never contains the customer's name, email or reference**: its input has no customer field. Requirement wording is copied from the customer's request, so the drawer tells the buyer to read it before sending.
-- **Suggestions** (read-only): suppliers with a latest price or stock for a confirmed requirement's product (freshest first), then active suppliers who handle its brand. Every other active supplier can still be picked.
+- **Suggestions** in the Add supplier picker (read-only): suppliers with a latest price or stock for a confirmed requirement's product (freshest first), then active suppliers who handle its brand. Every other active supplier can still be picked.
 - Only a Draft can be removed. An archived enquiry is read-only here (sent messages stay viewable). The enquiry status is never changed automatically.
 - Services: `addSupplierRequest`, `removeSupplierRequest`, `markRequestSent`, `setRequestOutcome`, `reopenRequest`, plus two hooks called by `broadcasts/service.ts` when a reply is recorded (`assertRequestAcceptsReply`, `markRequestReplied`).
 - Screens and data: `docs/design/SCREENS.md`, `docs/architecture/DATA_MODEL.md` section 12.
-
-### Compare and choose supplier (built 2026-09-21)
-Below the requests table, the Sourcing tab has a **Compare** section: one row per confirmed requirement, one column per supplier asked. Each cell is that supplier's latest price and stock for the requirement's product, as stated (VAT state, age, evidence link): the same values as the product page and the requirement's Supplier intelligence (`getProductsIntelligence`), so nothing new is stored for the comparison. **Nothing is ranked and there is no "best price".**
-- **Choose** a supplier for a requirement (optional note). The price and stock shown in the cell are saved with the choice, as pointers to the immutable observations. **One active choice per requirement**: choosing another supplier replaces it, **Clear** withdraws it; the old record is retracted, never edited or deleted.
-- The chosen cell shows **Chosen**, the note, who and when. If the supplier has quoted differently since, a **When chosen** block shows the original price and stock with their evidence.
-- A supplier marked No stock or Declined cannot be chosen. A requirement with no linked product says "Link a product to compare" (it can still be chosen; price and stock stay empty). An archived enquiry shows the choices read-only.
-- Service: `chooseSupplier`, `clearChoice` (`decision.service.ts`). Data: `docs/architecture/DATA_MODEL.md` section 13. It does not change the enquiry status.
 
 ## Not built (see `docs/ideas/BACKLOG.md`)
 Sending mail (SMTP), reply and thread linking, attachment contents, an LLM pass, database-managed dictionaries and an editor, creating broadcasts from supplier emails, WhatsApp and other channels, key rotation, a job queue, authentication. For sourcing: RFQ numbers and a cross-enquiry RFQ list, follow-up dates, per-supplier line selection, numeric warranty / credit / lead-time comparison, split orders.

@@ -15,15 +15,15 @@ import { listContactOptions, listSupplierOptions } from "@/modules/suppliers/que
 import { buildRequestMessage } from "../message";
 import { getSupplierSuggestions, listDecisionsForEnquiry, listRequestsForEnquiry, type SupplierRequestRow } from "../queries";
 import { AddSupplierForm } from "./add-supplier-form";
-import { CompareTable } from "./compare-table";
+import { CompareTable, type CompareColumn } from "./compare-table";
 import { RequestMessageDrawer } from "./message-drawer";
 import { OutcomeButton, RemoveRequestButton, ReopenRequestButton } from "./request-actions";
 
 const replyHref = (request: SupplierRequestRow) => `/broadcasts/new?supplier=${request.supplier.id}&request=${request.id}`;
 
 /**
- * The Sourcing tab of an enquiry: which suppliers were asked about the confirmed requirements, what was sent, and whether they replied.
- * The app prepares the message; a person sends it. A reply is recorded as a broadcast (the existing review flow), linked to the request.
+ * The Sourcing tab of an enquiry: suppliers matched from existing price/stock history can be chosen directly; suppliers
+ * with no match yet can be asked (the app prepares the message, a person sends it) and their reply recorded as a broadcast.
  */
 export async function SourcingTab({ enquiry, evidenceHref }: { enquiry: EnquiryDetail; evidenceHref: (observationId: string) => string }) {
   const lines = enquiry.items.filter((item) => item.reviewStatus === "CONFIRMED");
@@ -53,6 +53,15 @@ export async function SourcingTab({ enquiry, evidenceHref }: { enquiry: EnquiryD
   const waiting = requests.filter((r) => r.status === "SENT").length;
   const replied = requests.filter((r) => r.status === "REPLIED").length;
 
+  // Matching suppliers: everyone already on the enquiry, plus anyone with a known price/stock for a linked product who
+  // was never added — so a known match can be chosen directly, without going through Add supplier first.
+  const matchedOnly = new Map<string, string>();
+  for (const rows of intelligence.values()) for (const row of rows) if (!askedIds.has(row.supplierId)) matchedOnly.set(row.supplierId, row.supplierName);
+  const columns: CompareColumn[] = [
+    ...requests.map((r) => ({ supplierId: r.supplier.id, supplierName: r.supplier.name, status: r.status })),
+    ...[...matchedOnly].map(([supplierId, supplierName]) => ({ supplierId, supplierName, status: null })),
+  ];
+
   const addSupplier = (
     <FormDrawer
       trigger={
@@ -61,7 +70,7 @@ export async function SourcingTab({ enquiry, evidenceHref }: { enquiry: EnquiryD
         </Button>
       }
       title="Add supplier"
-      description="Who to ask about the confirmed requirements. Each supplier gets a ready-to-copy message."
+      description="Ask a supplier who hasn't already quoted these requirements. Each one gets a ready-to-copy message you send yourself."
     >
       <AddSupplierForm enquiryId={enquiry.id} suppliers={options} contacts={contactOptions} />
     </FormDrawer>
@@ -72,7 +81,7 @@ export async function SourcingTab({ enquiry, evidenceHref }: { enquiry: EnquiryD
       <Panel>
         <EmptyState
           title="Confirm a requirement first"
-          description="Suppliers are asked about the requirements you have confirmed. Review the requirements, then come back here."
+          description="Suppliers are matched against the requirements you have confirmed. Review the requirements, then come back here."
           action={
             <Button asChild size="sm">
               <Link href={`/enquiries/${enquiry.id}`}>Go to Requirements</Link>
@@ -87,7 +96,7 @@ export async function SourcingTab({ enquiry, evidenceHref }: { enquiry: EnquiryD
     <section aria-label="Sourcing" className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          {requests.length} asked · {waiting} waiting · {replied} replied
+          {requests.length} on this enquiry · {waiting} waiting · {replied} replied
           {lines.length ? ` · ${lines.length} confirmed requirement${lines.length === 1 ? "" : "s"} in the message` : ""}
         </p>
         {archived ? null : addSupplier}
@@ -99,103 +108,109 @@ export async function SourcingTab({ enquiry, evidenceHref }: { enquiry: EnquiryD
         </p>
       ) : null}
 
+      {columns.length > 0 && lines.length > 0 ? (
+        <CompareTable lines={lines} columns={columns} intelligence={intelligence} decisions={decisions} evidenceHref={evidenceHref} archived={archived} now={now} />
+      ) : null}
+
       {requests.length === 0 ? (
         <Panel>
-          <EmptyState title="No suppliers asked yet" description="Add the suppliers you want to ask. Each one gets a message you can copy and send." action={addSupplier} />
+          <EmptyState title="No suppliers asked yet" description="Ask a supplier who hasn't already quoted these requirements. Each one gets a message you can copy and send." action={addSupplier} />
         </Panel>
       ) : (
-        <TableShell>
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[22%]">Supplier</TableHead>
-                <TableHead className="w-[10%]">Status</TableHead>
-                <TableHead className="w-[16%]">Sent</TableHead>
-                <TableHead className="w-[20%]">Reply</TableHead>
-                <TableHead className="w-[14%]">Note</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {requests.map((request) => {
-                const message = request.status === "DRAFT" ? buildRequestMessage({ contactName: request.contact?.name ?? null, lines }) : null;
-                const sentSummary = request.sentAt && request.channel ? `${PREFERRED_CHANNEL_LABEL[request.channel]}, ${formatDateTime(request.sentAt)}${request.sentBy ? `, by ${request.sentBy.name}` : ""}` : null;
-                return (
-                  <TableRow key={request.id} className="align-top">
-                    <TableCell className="h-auto py-2">
-                      <Link href={`/suppliers/${request.supplier.id}`} className="block truncate font-medium hover:underline">
-                        {request.supplier.name}
-                      </Link>
-                      {request.contact ? <span className="block truncate text-xs text-muted-foreground">{request.contact.name}</span> : null}
-                    </TableCell>
-                    <TableCell className="h-auto py-2">
-                      <SupplierRequestStatusPill status={request.status} />
-                    </TableCell>
-                    <TableCell className="h-auto py-2">
-                      {request.sentAt && request.channel ? (
-                        <span className="num" title={formatDateTime(request.sentAt)}>
-                          {PREFERRED_CHANNEL_LABEL[request.channel]} · {formatRelativeAge(request.sentAt, now)}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">Not sent</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="h-auto py-2">
-                      {request.replies.length > 0 ? (
-                        request.replies.map((reply) => (
-                          <Link key={reply.id} href={`/broadcasts/${reply.id}`} className="block text-xs hover:underline">
-                            Reply · {formatRelativeAge(reply.evidenceSource.observedAt, now)} · {reply._count.items} item{reply._count.items === 1 ? "" : "s"}
-                            {reply.archivedAt ? " (archived)" : ""}
-                          </Link>
-                        ))
-                      ) : (
-                        <span className="text-muted-foreground">No reply yet</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="h-auto py-2">
-                      {request.note ? <span className="block text-xs">{request.note}</span> : <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell className="h-auto py-2">
-                      {archived ? (
-                        request.sentAt ? (
-                          <RequestMessageDrawer request={{ id: request.id, supplierName: request.supplier.name, sent: true }} initialSubject="" initialBody="" defaultSentAt="" sentText={request.messageText} sentSummary={sentSummary} />
-                        ) : null
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-1">
-                          {message ? (
-                            <RequestMessageDrawer
-                              request={{ id: request.id, supplierName: request.supplier.name, sent: false }}
-                              initialSubject={message.subject}
-                              initialBody={message.body}
-                              defaultSentAt={defaultSentAt}
-                              sentText={null}
-                              sentSummary={null}
-                            />
-                          ) : request.sentAt ? (
+        <section aria-label="Asked suppliers" className="space-y-2">
+          <div>
+            <h2 className="text-sm font-medium">Asked suppliers</h2>
+            <p className="text-xs text-muted-foreground">Suppliers explicitly asked, and any chosen above without asking. Track what has been sent and record replies here.</p>
+          </div>
+          <TableShell>
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-[22%]">Supplier</TableHead>
+                  <TableHead className="w-[10%]">Status</TableHead>
+                  <TableHead className="w-[16%]">Sent</TableHead>
+                  <TableHead className="w-[20%]">Reply</TableHead>
+                  <TableHead className="w-[14%]">Note</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {requests.map((request) => {
+                  const message = request.status === "DRAFT" ? buildRequestMessage({ contactName: request.contact?.name ?? null, lines }) : null;
+                  const sentSummary = request.sentAt && request.channel ? `${PREFERRED_CHANNEL_LABEL[request.channel]}, ${formatDateTime(request.sentAt)}${request.sentBy ? `, by ${request.sentBy.name}` : ""}` : null;
+                  return (
+                    <TableRow key={request.id} className="align-top">
+                      <TableCell className="h-auto py-2">
+                        <Link href={`/suppliers/${request.supplier.id}`} className="block truncate font-medium hover:underline">
+                          {request.supplier.name}
+                        </Link>
+                        {request.contact ? <span className="block truncate text-xs text-muted-foreground">{request.contact.name}</span> : null}
+                      </TableCell>
+                      <TableCell className="h-auto py-2">
+                        <SupplierRequestStatusPill status={request.status} />
+                      </TableCell>
+                      <TableCell className="h-auto py-2">
+                        {request.sentAt && request.channel ? (
+                          <span className="num" title={formatDateTime(request.sentAt)}>
+                            {PREFERRED_CHANNEL_LABEL[request.channel]} · {formatRelativeAge(request.sentAt, now)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">Not sent</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="h-auto py-2">
+                        {request.replies.length > 0 ? (
+                          request.replies.map((reply) => (
+                            <Link key={reply.id} href={`/broadcasts/${reply.id}`} className="block text-xs hover:underline">
+                              Reply · {formatRelativeAge(reply.evidenceSource.observedAt, now)} · {reply._count.items} item{reply._count.items === 1 ? "" : "s"}
+                              {reply.archivedAt ? " (archived)" : ""}
+                            </Link>
+                          ))
+                        ) : (
+                          <span className="text-muted-foreground">No reply yet</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="h-auto py-2">
+                        {request.note ? <span className="block text-xs">{request.note}</span> : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="h-auto py-2">
+                        {archived ? (
+                          request.sentAt ? (
                             <RequestMessageDrawer request={{ id: request.id, supplierName: request.supplier.name, sent: true }} initialSubject="" initialBody="" defaultSentAt="" sentText={request.messageText} sentSummary={sentSummary} />
-                          ) : null}
-                          {request.status !== "DRAFT" ? (
-                            <Button asChild variant="outline" size="xs">
-                              <Link href={replyHref(request)}>{request.status === "REPLIED" ? "Record another reply" : "Record reply"}</Link>
-                            </Button>
-                          ) : null}
-                          {request.status === "DRAFT" || request.status === "SENT" ? <OutcomeButton id={request.id} /> : null}
-                          {request.status === "NO_STOCK" || request.status === "DECLINED" ? <ReopenRequestButton id={request.id} /> : null}
-                          {request.status === "DRAFT" ? <RemoveRequestButton id={request.id} /> : null}
-                        </div>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableShell>
+                          ) : null
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-1">
+                            {message ? (
+                              <RequestMessageDrawer
+                                request={{ id: request.id, supplierName: request.supplier.name, sent: false }}
+                                initialSubject={message.subject}
+                                initialBody={message.body}
+                                defaultSentAt={defaultSentAt}
+                                sentText={null}
+                                sentSummary={null}
+                              />
+                            ) : request.sentAt ? (
+                              <RequestMessageDrawer request={{ id: request.id, supplierName: request.supplier.name, sent: true }} initialSubject="" initialBody="" defaultSentAt="" sentText={request.messageText} sentSummary={sentSummary} />
+                            ) : null}
+                            {request.status !== "DRAFT" ? (
+                              <Button asChild variant="outline" size="xs">
+                                <Link href={replyHref(request)}>{request.status === "REPLIED" ? "Record another reply" : "Record reply"}</Link>
+                              </Button>
+                            ) : null}
+                            {request.status === "DRAFT" || request.status === "SENT" ? <OutcomeButton id={request.id} /> : null}
+                            {request.status === "NO_STOCK" || request.status === "DECLINED" ? <ReopenRequestButton id={request.id} /> : null}
+                            {request.status === "DRAFT" ? <RemoveRequestButton id={request.id} /> : null}
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableShell>
+        </section>
       )}
-
-      {requests.length > 0 && lines.length > 0 ? (
-        <CompareTable lines={lines} requests={requests} intelligence={intelligence} decisions={decisions} evidenceHref={evidenceHref} archived={archived} now={now} />
-      ) : null}
     </section>
   );
 }

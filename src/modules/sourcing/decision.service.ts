@@ -25,11 +25,20 @@ export async function chooseSupplier(ctx: ServiceContext, input: DecisionChooseI
     requireNotArchived(item.enquiry);
     if (item.reviewStatus !== "CONFIRMED") throw new InvariantError("Only a confirmed requirement can have a supplier chosen.");
 
-    const request = await c.db.supplierRequest.findUnique({
+    let request = await c.db.supplierRequest.findUnique({
       where: { enquiryId_supplierId: { enquiryId: item.enquiryId, supplierId: input.supplierId } },
       select: { status: true, supplier: { select: { name: true } } },
     });
-    if (!request) throw new ValidationError("That supplier is not on this enquiry. Add it on the Sourcing tab first.", { supplierId: "Not on this enquiry" });
+    if (!request) {
+      // Choosing a supplier we already have a price/stock match for doesn't require an explicit "Add supplier" first:
+      // it silently starts a DRAFT request, exactly what "added but not yet messaged" already means.
+      const supplier = await c.db.supplier.findUnique({ where: { id: input.supplierId }, select: { id: true, name: true, status: true } });
+      if (!supplier) throw new NotFoundError("Supplier");
+      if (supplier.status !== "ACTIVE") throw new ValidationError("That supplier is not active.", { supplierId: "Choose an active supplier" });
+      const created = await c.db.supplierRequest.create({ data: { enquiryId: item.enquiryId, supplierId: supplier.id, createdById: ctx.actor.id } });
+      await writeAudit(c, { action: "supplier_request.added", entityType: "SupplierRequest", entityId: created.id, scope: enquiryScope(item.enquiryId), details: { supplier: supplier.name, contact: null } });
+      request = { status: created.status, supplier: { name: supplier.name } };
+    }
     if (request.status === "NO_STOCK" || request.status === "DECLINED") {
       throw new InvariantError(`${request.supplier.name} is marked ${SUPPLIER_REQUEST_STATUS_LABEL[request.status]}. Reopen the request before choosing it.`);
     }
