@@ -4,6 +4,9 @@ import type { EnquiryPriority, EnquiryStatus, EvidenceChannel } from "../../gene
 import { escapeLike } from "../../lib/like";
 import { PAGE_SIZE } from "../../lib/search-params";
 import { findMatchCandidates } from "../products/matching";
+import type { MatchCandidate } from "../products/matching";
+import { loadActiveAttributes } from "../products/attributes.service";
+import { compareRequirementsToProduct, overallVerdict, toRequirementInput, SPEC_VERDICT_SEVERITY, type PersistedRequirement, type RequirementVerdict, type SpecVerdict } from "../specs/verdict";
 import { isEnquiryItemReady } from "./readiness";
 
 export type EnquiryView = "attention" | "new" | "sourcing" | "waiting" | "quote" | "all" | "archived";
@@ -185,9 +188,33 @@ export async function getEnquiry(id: string) {
 
 export type EnquiryDetail = NonNullable<Awaited<ReturnType<typeof getEnquiry>>>;
 
-/** Suggested products for one requirement (computed on demand for the item being reviewed, never stored). */
-export async function getEnquiryItemCandidates(item: { partNumber: string | null; modelText: string | null; brandText: string | null; description: string | null }) {
-  return findMatchCandidates(db, { partNumber: item.partNumber, model: item.modelText, brandText: item.brandText, description: item.description });
+/** A match candidate plus how well its own specification satisfies the item's active requirements (src/modules/specs/verdict.ts). */
+export type CandidateWithVerdict = MatchCandidate & { overall: SpecVerdict | null; perRequirement: RequirementVerdict[] };
+
+/**
+ * Suggested products for one requirement (computed on demand for the item being reviewed, never stored), ranked best spec-match
+ * first. Display only: this does not change which product gets auto-linked.
+ */
+export async function getEnquiryItemCandidates(
+  item: { partNumber: string | null; modelText: string | null; brandText: string | null; description: string | null },
+  requirements: readonly PersistedRequirement[],
+): Promise<CandidateWithVerdict[]> {
+  const candidates = await findMatchCandidates(db, { partNumber: item.partNumber, model: item.modelText, brandText: item.brandText, description: item.description });
+  if (candidates.length === 0 || requirements.length === 0) return candidates.map((c) => ({ ...c, overall: null, perRequirement: [] }));
+
+  const inputs = requirements.map(toRequirementInput);
+  const attributesByProduct = await loadActiveAttributes(db, candidates.map((c) => c.productId));
+  const withVerdicts = candidates.map((c) => {
+    const perRequirement = compareRequirementsToProduct(inputs, attributesByProduct.get(c.productId) ?? []);
+    return { ...c, overall: overallVerdict(perRequirement), perRequirement };
+  });
+  // Ranking: text-match strength first — an exact part-number match is the strongest identity signal this system has,
+  // and an attribute-coverage gap must never bury it below a weaker text match. Spec verdict is the tie-breaker within
+  // a strength tier (phase 3's "ranking ... in the candidate list").
+  const strengthRank: Record<MatchCandidate["strength"], number> = { EXACT: 2, PROBABLE: 1, POSSIBLE: 0 };
+  return withVerdicts.sort(
+    (a, b) => strengthRank[b.strength] - strengthRank[a.strength] || SPEC_VERDICT_SEVERITY[b.overall] - SPEC_VERDICT_SEVERITY[a.overall],
+  );
 }
 
 /** Active users for the "Owner" picker. */

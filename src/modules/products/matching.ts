@@ -1,6 +1,8 @@
 import type { Db } from "../../core/database/tx";
 import type { MatchBasis } from "../../generated/prisma/enums";
 import { normalizeCode, normalizeCodeOrNull, normalizeName } from "../../lib/normalize";
+import { blocksAutoLink, compareRequirementsToProduct, overallVerdict, type RequirementInput } from "../specs/verdict";
+import { loadActiveAttributes } from "./attributes.service";
 
 /**
  * Product matching for broadcast items. Deterministic layers only (docs/modules/PRODUCTS.md); fuzzy and LLM matching are later layers.
@@ -95,4 +97,22 @@ export function pickAutoLink(candidates: readonly MatchCandidate[]): MatchCandid
   if (exact.length > 1) return null;
   const probable = candidates.filter((c) => c.strength === "PROBABLE");
   return probable.length === 1 ? probable[0]! : null;
+}
+
+/**
+ * `pickAutoLink`, redefined for phase 4: the same single-strong-match pick, but vetoed when a MUST requirement comes back
+ * MISMATCH, UNKNOWN or PARTIAL (see `blocksAutoLink`) against the picked candidate's own attributes — "conflicts and unknown must-have specifications force
+ * human review" (docs/plans/active/CURRENT.md). An item with no MUST requirements (or no requirements at all) is unaffected:
+ * this never queries the database unless `pickAutoLink` already found something to veto.
+ */
+export async function pickAutoLinkWithSpecs(db: Db, candidates: readonly MatchCandidate[], requirements: readonly RequirementInput[]): Promise<MatchCandidate | null> {
+  const link = pickAutoLink(candidates);
+  if (!link) return null;
+  const musts = requirements.filter((r) => r.importance === "MUST");
+  if (musts.length === 0) return link;
+
+  const attributesByProduct = await loadActiveAttributes(db, [link.productId]);
+  const perRequirement = compareRequirementsToProduct(musts, attributesByProduct.get(link.productId) ?? []);
+  const overall = overallVerdict(perRequirement);
+  return blocksAutoLink(overall) ? null : link;
 }

@@ -80,7 +80,7 @@ export default async function EnquiryWorkspacePage(props: PageProps<"/enquiries/
   const nextItemId = pendingIds.find((pid, index) => pid !== selected?.id && index > selectedPendingIndex) ?? pendingIds.find((pid) => pid !== selected?.id) ?? null;
 
   const [candidates, intelligence, brandOptions, categoryOptions, customers, contacts, owners, quotations] = await Promise.all([
-    selected && selected.reviewStatus === "PENDING" ? getEnquiryItemCandidates(selected) : Promise.resolve([]),
+    selected && selected.reviewStatus === "PENDING" ? getEnquiryItemCandidates(selected, selected.requirements) : Promise.resolve([]),
     selected ? getItemIntelligence({ productId: selected.productId, productBrandId: selected.product?.brandId ?? null, brandText: selected.brandText }) : Promise.resolve(null),
     listBrandOptions(),
     listCategoryOptions(),

@@ -2,7 +2,7 @@ import { ConflictError, DomainError, InvariantError, NotFoundError, ValidationEr
 import { inTransaction, type ServiceContext } from "../../core/database/tx";
 import { diffFields, hasChanges } from "../../lib/diff";
 import { writeAudit } from "../audit/service";
-import { findMatchCandidates, pickAutoLink } from "../products/matching";
+import { findMatchCandidates, pickAutoLinkWithSpecs } from "../products/matching";
 import { productCreateSchema } from "../products/schemas";
 import { addAlias, createProduct } from "../products/service";
 import { isEnquiryItemReady } from "./readiness";
@@ -53,19 +53,21 @@ export async function addManualEnquiryItem(ctx: ServiceContext, input: EnquiryIt
     const last = await c.db.enquiryItem.aggregate({ where: { enquiryId }, _max: { position: true } });
 
     const candidates = await findMatchCandidates(c.db, { partNumber: fields.partNumber, model: fields.modelText, brandText: fields.brandText, description: fields.description });
-    const link = pickAutoLink(candidates);
+    const resolvedSourceText = sourceText ?? "(added by hand)";
+    const proposedRequirements = proposeRequirementsForItem({ sourceText: resolvedSourceText, description: fields.description, specText: fields.specText });
+    const link = await pickAutoLinkWithSpecs(c.db, candidates, proposedRequirements);
     const item = await c.db.enquiryItem.create({
       data: {
         ...fields,
         enquiryId,
         position: (last._max.position ?? 0) + 1,
-        sourceText: sourceText ?? "(added by hand)",
+        sourceText: resolvedSourceText,
         origin: "MANUAL",
         productId: link?.productId ?? null,
         matchBasis: link?.basis ?? null,
       },
     });
-    const requirements = await createParsedRequirements(c, item.id, proposeRequirementsForItem(item));
+    const requirements = await createParsedRequirements(c, item.id, proposedRequirements);
     await writeAudit(c, { action: "enquiry_item.created", entityType: "EnquiryItem", entityId: item.id, scope: enquiryScope(enquiryId), details: { description: item.description, ...(requirements ? { requirements } : {}) } });
     await touchEnquiry(c, enquiryId);
     return item;
