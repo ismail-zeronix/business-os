@@ -248,10 +248,12 @@ describe("chooseSupplier / clearChoice", () => {
     expect(JSON.stringify(chosen[1]!.details)).toContain("TEST Supplier A"); // names the supplier it replaced
   });
 
-  it("needs a confirmed requirement, a supplier on the enquiry, and not a No stock / Declined one", async () => {
-    const { item, a } = await setup();
+  it("needs a confirmed requirement and not a No stock / Declined one; a supplier not yet on the enquiry is added and chosen in one step", async () => {
+    const { enquiry, item, a } = await setup();
     const outsider = await supplier("TEST Outsider");
-    await expect(choose({ enquiryItemId: item.id, supplierId: outsider.id })).rejects.toBeInstanceOf(ValidationError);
+    const choice = await choose({ enquiryItemId: item.id, supplierId: outsider.id });
+    expect(choice).toBeTruthy();
+    expect(await testDb.supplierRequest.findFirstOrThrow({ where: { enquiryId: enquiry.id, supplierId: outsider.id } })).toMatchObject({ status: "DRAFT" });
     await expect(choose({ enquiryItemId: NIL, supplierId: a.id })).rejects.toBeInstanceOf(NotFoundError);
 
     const pending = await enquiryWithItem({ confirmed: false });
