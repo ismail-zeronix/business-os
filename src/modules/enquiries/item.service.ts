@@ -1,10 +1,11 @@
-import { ConflictError, InvariantError, NotFoundError, ValidationError } from "../../core/errors";
+import { ConflictError, DomainError, InvariantError, NotFoundError, ValidationError } from "../../core/errors";
 import { inTransaction, type ServiceContext } from "../../core/database/tx";
 import { diffFields, hasChanges } from "../../lib/diff";
 import { writeAudit } from "../audit/service";
 import { findMatchCandidates, pickAutoLink } from "../products/matching";
 import { productCreateSchema } from "../products/schemas";
 import { addAlias, createProduct } from "../products/service";
+import { isEnquiryItemReady } from "./readiness";
 import type { EnquiryItemCreateProductInput, EnquiryItemLinkInput, EnquiryItemManualCreateInput, EnquiryItemReasonInput, EnquiryItemUpdateInput } from "./schemas";
 import { createParsedRequirements, proposeRequirementsForItem } from "./requirement.service";
 import { enquiryScope, requireNotArchived, touchEnquiry } from "./shared";
@@ -167,6 +168,48 @@ export async function saveAndConfirmEnquiryItem(ctx: ServiceContext, input: Enqu
     await updateEnquiryItem(c, input);
     return confirmEnquiryItem(c, input.id);
   });
+}
+
+export type ConfirmReadyEnquiryFailure = { itemId: string; description: string | null; reason: string };
+export type ConfirmReadyEnquirySummary = { readyCount: number; confirmedCount: number; failed: ConfirmReadyEnquiryFailure[] };
+
+/**
+ * "Confirm N ready requirements": confirms every PENDING item that already has identifying text and (if linked) an
+ * active product (see readiness.ts), without opening each one. Reuses confirmEnquiryItem one item at a time, each in
+ * its own transaction — not one all-or-nothing transaction — so an item that fails (e.g. someone else reopened or
+ * archived its product in the meantime) does not block the rest. Records no price or stock: this is a pure status
+ * flip + audit, mirroring broadcasts' confirmReadyItems.
+ */
+export async function confirmReadyEnquiryItems(ctx: ServiceContext, enquiryId: string): Promise<ConfirmReadyEnquirySummary> {
+  const enquiry = await ctx.db.enquiry.findUnique({ where: { id: enquiryId }, select: { id: true } });
+  if (!enquiry) throw new NotFoundError("Enquiry");
+
+  const items = await ctx.db.enquiryItem.findMany({
+    where: { enquiryId, reviewStatus: "PENDING" },
+    orderBy: { position: "asc" },
+    select: { id: true, description: true, modelText: true, partNumber: true, productId: true, product: { select: { status: true } } },
+  });
+  const ready = items.filter(isEnquiryItemReady);
+
+  const failed: ConfirmReadyEnquiryFailure[] = [];
+  let confirmedCount = 0;
+  for (const item of ready) {
+    try {
+      await confirmEnquiryItem(ctx, item.id);
+      confirmedCount++;
+    } catch (error) {
+      if (!(error instanceof DomainError)) throw error; // a real bug still surfaces; only expected domain failures are collected
+      failed.push({ itemId: item.id, description: item.description, reason: error.message });
+    }
+  }
+
+  await writeAudit(ctx, {
+    action: "enquiry.bulk_confirmed",
+    entityType: "Enquiry",
+    entityId: enquiryId,
+    details: { readyCount: ready.length, confirmed: confirmedCount, failed: failed.map((f) => ({ item: f.itemId, reason: f.reason })) },
+  });
+  return { readyCount: ready.length, confirmedCount, failed };
 }
 
 export async function ignoreEnquiryItem(ctx: ServiceContext, input: EnquiryItemReasonInput) {

@@ -4,6 +4,7 @@ import type { EnquiryPriority, EnquiryStatus, EvidenceChannel } from "../../gene
 import { escapeLike } from "../../lib/like";
 import { PAGE_SIZE } from "../../lib/search-params";
 import { findMatchCandidates } from "../products/matching";
+import { isEnquiryItemReady } from "./readiness";
 
 export type EnquiryView = "attention" | "new" | "sourcing" | "waiting" | "quote" | "all" | "archived";
 export const ENQUIRY_VIEWS: readonly EnquiryView[] = ["attention", "new", "sourcing", "waiting", "quote", "all", "archived"];
@@ -155,7 +156,7 @@ export async function listEnquiriesNeedingAttention(limit = 8): Promise<EnquiryL
 
 /** Everything the enquiry workspace needs: the immutable evidence, customer/contact/owner, and all requirements with their linked product. */
 export async function getEnquiry(id: string) {
-  return db.enquiry.findUnique({
+  const enquiry = await db.enquiry.findUnique({
     where: { id },
     include: {
       evidenceSource: { select: { id: true, kind: true, rawText: true, observedAt: true, channel: true, createdAt: true } },
@@ -175,6 +176,11 @@ export async function getEnquiry(id: string) {
       _count: { select: { supplierRequests: true } },
     },
   });
+  if (!enquiry) return null;
+  // "Confirm N ready requirements": every PENDING item that is identified and, if linked, points at an active product,
+  // computed here so the page and the action agree on exactly the same set (see readiness.ts).
+  const readyItemIds = enquiry.items.filter((i) => i.reviewStatus === "PENDING" && isEnquiryItemReady(i)).map((i) => i.id);
+  return { ...enquiry, readyItemIds };
 }
 
 export type EnquiryDetail = NonNullable<Awaited<ReturnType<typeof getEnquiry>>>;

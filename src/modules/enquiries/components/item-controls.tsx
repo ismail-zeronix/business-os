@@ -1,13 +1,16 @@
 "use client";
 
+import { CheckCheck } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { useActionState, useState } from "react";
+import { toast } from "sonner";
 import { FormMessage } from "@/components/forms/form-message";
 import { SubmitButton } from "@/components/forms/submit-button";
 import { useActionFeedback } from "@/components/forms/use-action-feedback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { archiveEnquiryAction, ignoreEnquiryItemAction, reopenEnquiryItemAction } from "../actions";
+import { archiveEnquiryAction, confirmReadyEnquiryItemsAction, ignoreEnquiryItemAction, reopenEnquiryItemAction } from "../actions";
 
 /** Ignore a requirement that is not relevant (small popover with an optional reason; nothing is deleted). */
 export function IgnoreControl({ itemId }: { itemId: string }) {
@@ -61,6 +64,57 @@ export function ReopenControl({ itemId }: { itemId: string }) {
           <div className="flex justify-end">
             <SubmitButton size="sm" pendingLabel="Reopening...">
               Reopen requirement
+            </SubmitButton>
+          </div>
+        </form>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * "Confirm N ready requirements": confirms every pending requirement that is already identified (has a description,
+ * model or part number) and, if linked, points at an active product, in one click. Records no price or stock —
+ * confirming an enquiry item is a pure status change. Requirements that are not ready (no identifying text, or an
+ * archived-product link) are never touched and stay in the one-by-one review flow.
+ */
+export function ConfirmReadyEnquiryControl({ enquiryId, readyCount, keepQuery }: { enquiryId: string; readyCount: number; keepQuery: string }) {
+  const [open, setOpen] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const [state, formAction] = useActionState(confirmReadyEnquiryItemsAction, null);
+
+  useActionFeedback(state, (summary) => {
+    setOpen(false);
+    if (summary.failed.length > 0) {
+      toast.warning(`Confirmed ${summary.confirmedCount} of ${summary.readyCount} ready requirement${summary.readyCount === 1 ? "" : "s"}. ${summary.failed.length} left pending — see Activity.`);
+    } else {
+      toast.success(`Confirmed ${summary.confirmedCount} requirement${summary.confirmedCount === 1 ? "" : "s"}`);
+    }
+    // Every remaining PENDING item is, by definition, one that was not ready: drop ?item= so the page falls back to it.
+    router.replace(`${pathname}${keepQuery ? `?${keepQuery}` : ""}`);
+  });
+
+  if (readyCount === 0) return null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm">
+          <CheckCheck aria-hidden /> Confirm {readyCount} ready {readyCount === 1 ? "requirement" : "requirements"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 space-y-2">
+        <p className="text-xs text-muted-foreground">
+          Confirms every pending requirement that is already identified and, if linked, points at an active product. Records
+          no price or stock. Requirements that are not ready are left for individual review.
+        </p>
+        <form action={formAction} className="space-y-2">
+          <input type="hidden" name="id" value={enquiryId} />
+          <FormMessage state={state} />
+          <div className="flex justify-end">
+            <SubmitButton size="sm" pendingLabel="Confirming...">
+              Confirm {readyCount} {readyCount === 1 ? "requirement" : "requirements"}
             </SubmitButton>
           </div>
         </form>

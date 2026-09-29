@@ -65,6 +65,7 @@ export const enquiryHeaderSchema = z.object({
   notes: optionalText(2000),
 });
 
+export const enquiryIdSchema = z.object({ id: z.uuid() });
 export const enquiryStatusSchema = z.object({ id: z.uuid(), status: z.enum(EnquiryStatus), note: optionalText(500) });
 export const enquiryNoteSchema = z.object({ id: z.uuid(), note: requiredText("Note", 2000) });
 export const enquiryArchiveSchema = z.object({ id: z.uuid(), archived: checkbox() });

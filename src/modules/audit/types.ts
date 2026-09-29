@@ -82,6 +82,7 @@ export type AuditAction =
   | "enquiry.status_changed"
   | "enquiry.note_added"
   | "enquiry.archived"
+  | "enquiry.bulk_confirmed"
   | "enquiry_item.created"
   | "enquiry_item.updated"
   | "enquiry_item.linked"

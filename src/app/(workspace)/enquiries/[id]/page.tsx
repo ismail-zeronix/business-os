@@ -23,7 +23,7 @@ import { listCustomerContactOptions, listCustomerOptions } from "@/modules/custo
 import { AddEnquiryItemForm } from "@/modules/enquiries/components/add-item-form";
 import { EnquiryStatusControl } from "@/modules/enquiries/components/status-control";
 import { EnquiryHeaderPanel } from "@/modules/enquiries/components/header-panel";
-import { ArchiveEnquiryControl } from "@/modules/enquiries/components/item-controls";
+import { ArchiveEnquiryControl, ConfirmReadyEnquiryControl } from "@/modules/enquiries/components/item-controls";
 import { EnquiryItemRow } from "@/modules/enquiries/components/item-row";
 import { NotesComposer } from "@/modules/enquiries/components/notes-composer";
 import { SuggestionsStrip, type Suggestion } from "@/modules/enquiries/components/suggestions-strip";
@@ -98,6 +98,7 @@ export default async function EnquiryWorkspacePage(props: PageProps<"/enquiries/
   const hrefFor = (itemId: string) => buildHref(basePath, { filter: filter === "all" ? undefined : filter }, { item: itemId });
   const filterHref = (f: Filter) => buildHref(basePath, {}, { filter: f === "all" ? undefined : f });
   const keepQuery = filter === "all" ? "" : `filter=${filter}`;
+  const readyCount = enquiry.readyItemIds.length;
   const evidenceHref = (observationId: string) => buildHref(basePath, searchParams, { evidence: observationId });
 
   const ranges: LineRange[] = items.map((i) => ({ start: i.sourceLineStart ?? 0, end: i.sourceLineEnd ?? 0, status: i.reviewStatus })).filter((r) => r.start > 0);
@@ -224,7 +225,10 @@ export default async function EnquiryWorkspacePage(props: PageProps<"/enquiries/
                     <span className="num">{counts[f]}</span>
                   </Link>
                 ))}
-                <span className="ml-auto text-[11px] text-muted-foreground">j / k next and previous requirement</span>
+                <div className="ml-auto flex items-center gap-3">
+                  <ConfirmReadyEnquiryControl enquiryId={id} readyCount={readyCount} keepQuery={keepQuery} />
+                  <span className="text-[11px] text-muted-foreground">j / k next and previous requirement</span>
+                </div>
               </div>
 
               {items.length === 0 ? (

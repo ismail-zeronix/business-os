@@ -8,12 +8,14 @@ import { formDataToObject } from "@/core/validation/form-data";
 import { zonedInputToUtc } from "@/lib/format";
 import {
   addManualEnquiryItem,
+  confirmReadyEnquiryItems,
   createProductForEnquiryItem,
   ignoreEnquiryItem,
   reopenEnquiryItem,
   saveAndConfirmEnquiryItem,
   setEnquiryItemProduct,
   updateEnquiryItem,
+  type ConfirmReadyEnquirySummary,
 } from "./item.service";
 import { addRequirement, reextractRequirements, replaceRequirement, retractRequirement } from "./requirement.service";
 import { requirementAddSchema, requirementReextractSchema, requirementReplaceSchema, requirementRetractSchema } from "./requirement.schemas";
@@ -22,6 +24,7 @@ import {
   enquiryArchiveSchema,
   enquiryCreateSchema,
   enquiryHeaderSchema,
+  enquiryIdSchema,
   enquiryItemCreateProductSchema,
   enquiryItemLinkSchema,
   enquiryItemManualCreateSchema,
@@ -156,6 +159,19 @@ export async function saveEnquiryItemAction(_prev: IdResult | null, formData: Fo
       return { id: item.enquiryId };
     },
     { successMessage: confirming ? "Requirement confirmed" : "Requirement saved", formData },
+  );
+}
+
+/** "Confirm N ready requirements": the toast text depends on the outcome (all confirmed vs. some left pending), so the popover composes it itself from `data` rather than a static successMessage. */
+export async function confirmReadyEnquiryItemsAction(_prev: ActionResult<ConfirmReadyEnquirySummary> | null, formData: FormData): Promise<ActionResult<ConfirmReadyEnquirySummary>> {
+  return runAction(
+    async () => {
+      const input = enquiryIdSchema.parse(formDataToObject(formData));
+      const summary = await confirmReadyEnquiryItems(await getServiceContext(), input.id);
+      refreshEnquiry(input.id, true); // statuses changed, same as confirm/reopen
+      return summary;
+    },
+    { formData },
   );
 }
 
