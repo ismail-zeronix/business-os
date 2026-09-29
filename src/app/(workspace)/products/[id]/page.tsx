@@ -92,7 +92,22 @@ export default async function ProductDetailPage(props: PageProps<"/products/[id]
               }
               title="Edit product"
             >
-              <ProductForm product={product} brandOptions={brandOptions} categoryOptions={categoryOptions} />
+              <ProductForm
+                product={{
+                  id: product.id,
+                  name: product.name,
+                  brandId: product.brandId,
+                  categoryId: product.categoryId,
+                  family: product.family,
+                  model: product.model,
+                  partNumber: product.partNumber,
+                  manufacturerSku: product.manufacturerSku,
+                  description: product.description,
+                  isTemporary: product.isTemporary,
+                }}
+                brandOptions={brandOptions}
+                categoryOptions={categoryOptions}
+              />
             </FormDrawer>
           </>
         }

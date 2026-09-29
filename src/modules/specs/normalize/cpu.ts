@@ -29,6 +29,7 @@ const RULES: Rule[] = [
   { pattern: /\bu([3579])[\s-]*(\d{3}[A-Z]{0,2})\b/i, build: (m, after) => withSku(`intel/core-ultra/${m[1]}`, cleanSku(m[2], after)) },
   { pattern: /\b(?:core\s*)?c?i([3579])(?:[\s-]*(\d{4,5}(?:G\d)?[A-Z]{0,2}))?\b/i, build: (m, after) => withSku(`intel/core/i${m[1]}`, cleanSku(m[2], after)) },
   { pattern: /\bcore\s*([3579])(?!\d)(?:[\s-]*(\d{3}[A-Z]{1,2})\b)?/i, build: (m, after) => withSku(`intel/core/${m[1]}`, cleanSku(m[2], after)) },
+  { pattern: /\bc([3579])[\s-](\d{3}[A-Z]{0,2})\b/i, build: (m, after) => withSku(`intel/core/${m[1]}`, cleanSku(m[2], after)) },
   { pattern: /\bm([1-9])(?:\s*(pro|max|ultra))?\b(?!\s*(?:nvme|ssd|sata|pcie|slot|\.2))/i, build: (m) => ({ canonical: `apple/m${m[1]}${m[2] ? `/${m[2].toLowerCase()}` : ""}`, complete: true }) },
   { pattern: /\b(?:qualcomm\s*)?snapdragon(?:\s*(x\d?(?:\s*(?:elite|plus))?))?/i, build: (m) => ({ canonical: m[1] ? `qualcomm/snapdragon/${m[1].toLowerCase().replace(/\s+/g, "-")}` : "qualcomm/snapdragon", complete: false }) },
   { pattern: /\b(?:amd\s*)?ryzen\s*(?:ai\s*)?([3579])(?:\s*(\d{4}[A-Z]{0,2}\d?))?\b/i, build: (m, after) => withSku(`amd/ryzen/${m[1]}`, cleanSku(m[2], after)) },

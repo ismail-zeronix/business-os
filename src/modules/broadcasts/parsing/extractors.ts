@@ -118,9 +118,11 @@ const SPEC_PATTERNS: RegExp[] = [
   /\b(?:intel\s*)?(?:core\s*)?ultra[\s-]*(?:[3579]|x[3579])(?!\w)(?:[\s-]*\d{3}[A-Z]{0,2}\b)?/gi, // "Ultra 7 255H", "ULTRA7-255H", "ULTRA-7 256V", "Core Ultra 5" (tier only), "Core Ultra X9"
   /\b(?:intel\s*)?core\s*[3579](?!\d)(?:[\s-]*\d{3}[A-Z]{1,2}\b)?/gi, // "Core 5-120U", "Intel Core 7", "Core 5 210H"
   /\bU[3579][-\s]*\d{3}[A-Z]{0,2}\b/gi, // Core Ultra shorthand in supplier lists: "U5 235", "U7-265", "U7 -265T"
+  /\bC[3579][\s-]\d{3}[A-Z]{0,2}\b/gi, // Core (non-Ultra) shorthand: "C5-120U", "C7-150U"
   /\b(?:intel\s*)?(?:core\s*)?i[3579][-\s]*\d{4,5}(?:G\d|[A-Z]{1,2})?\b/gi, // "i7-1355U", "I5-1135G7", and "I7- 12700" with the space some lists leave after the hyphen
   /\b(?:intel\s*)?(?:core\s*)?i[3579]\b/gi,
   /\b(?:amd\s+)?ryzen\s*(?:ai\s*)?[3579](?:\s*-?\s*\d{2,4}[A-Z]{0,2})?\b/gi, // "Ryzen 7 7735HS", "AMD Ryzen 5 - 40"
+  /\bR[3579][\s-]\d{4}[A-Z]{0,2}\b/gi, // Ryzen shorthand in supplier lists: "R5-7535U", "R7 7735HS"
   /\b(?:qualcomm\s*)?snapdragon(?:\s*x\d?(?:\s*(?:elite|plus))?)?/gi, // "Snapdragon X2 Elite"
   /\bm[1-9](?:\s*(?:pro|max|ultra))?\b(?!\s*(?:nvme|ssd|sata|pcie|slot|\.2))/gi, // Apple chips: "M5", "M5 Pro", "M5 MAX"
   /\b\d{1,2}\s?-?\s?(?:core\s+)?CPU\s*\/\s*\d{1,2}\s?-?\s?(?:core\s+)?GPU\b/gi, // "18 CPU / 40 GPU" (Apple core counts)

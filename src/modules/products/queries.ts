@@ -4,7 +4,7 @@ import type { RecordStatus } from "../../generated/prisma/enums";
 import { escapeLike } from "../../lib/like";
 import { normalizeCode } from "../../lib/normalize";
 import { PAGE_SIZE } from "../../lib/search-params";
-import { observationSummaryByProduct } from "../observations/queries";
+import { observationSummaryByProduct, type LatestPriceSummary } from "../observations/queries";
 
 export type ProductListParams = {
   q?: string;
@@ -28,6 +28,7 @@ export type ProductListRow = {
   supplierName: string | null;
   supplierCount: number;
   latestObservedAt: Date | null;
+  latestPrice: LatestPriceSummary | null;
 };
 
 const MAX_TOKENS = 6;
@@ -110,6 +111,7 @@ export async function searchProducts(params: ProductListParams): Promise<{ rows:
       supplierName: summaries.get(p.id)?.latestSupplierName ?? null,
       supplierCount: summaries.get(p.id)?.supplierCount ?? 0,
       latestObservedAt: summaries.get(p.id)?.latestObservedAt ?? null,
+      latestPrice: summaries.get(p.id)?.latestPrice ?? null,
     })),
   };
 }

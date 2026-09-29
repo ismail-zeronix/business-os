@@ -446,9 +446,10 @@ export async function backfillAutoCreateProducts(ctx: ServiceContext): Promise<B
  * The one step that turns a reviewed item into business data. Requires an ACTIVE linked product. There is always something to
  * record: a price with no currency is recorded in AED (this business runs on a single currency), and an item with neither a
  * price nor an explicit stock signal is recorded with a stock status of AVAILABLE (a supplier listing a product is itself
- * evidence they carry it). Neither default is written back onto the item itself (its own currencyCode/stockStatus stay as
- * they were, so a person can still fill them in later via Reopen) — only the created observation records the resolved value,
- * and the audit row flags which defaults were applied. Creates the observations with the evidence's own timestamp.
+ * evidence they carry it). The stock default is not written back onto the item (its stockStatus stays as it was, so a person can
+ * still fill it in later via Reopen). The currency default IS written back: the database refuses a confirmed item that has a price
+ * but no currency (broadcast_items_confirmed_price_has_currency), and Reopen lets a person correct it. The audit row flags which
+ * defaults were applied. Creates the observations with the evidence's own timestamp.
  */
 export async function confirmItem(ctx: ServiceContext, itemId: string) {
   return inTransaction(ctx, async (c) => {
@@ -485,7 +486,7 @@ export async function confirmItem(ctx: ServiceContext, itemId: string) {
       recorded.push("available (inferred)");
     }
 
-    const confirmed = await c.db.broadcastItem.update({ where: { id: item.id }, data: { reviewStatus: "CONFIRMED", confirmedAt: new Date(), confirmedById: ctx.actor.id, ignoredReason: null } });
+    const confirmed = await c.db.broadcastItem.update({ where: { id: item.id }, data: { reviewStatus: "CONFIRMED", confirmedAt: new Date(), confirmedById: ctx.actor.id, ignoredReason: null, ...(hasPrice && !item.currencyCode ? { currencyCode } : {}) } });
     await writeAudit(c, {
       action: "broadcast_item.confirmed",
       entityType: "BroadcastItem",

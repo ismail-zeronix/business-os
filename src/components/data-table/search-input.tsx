@@ -10,12 +10,11 @@ const DEBOUNCE_MS = 300;
 
 /**
  * Search box that writes to the URL (`?q=`), debounced, and resets pagination. Press "/" anywhere on the page to focus it.
- * The inner field is keyed by the URL value, so an external change (e.g. "Clear filters") resets the text without an effect.
  */
 export function SearchInput({ placeholder = "Search", paramName = "q", className, inputClassName }: { placeholder?: string; paramName?: string; className?: string; inputClassName?: string }) {
   const searchParams = useSearchParams();
   const initial = searchParams.get(paramName) ?? "";
-  return <SearchField key={initial} initial={initial} placeholder={placeholder} paramName={paramName} className={className} inputClassName={inputClassName} />;
+  return <SearchField initial={initial} placeholder={placeholder} paramName={paramName} className={className} inputClassName={inputClassName} />;
 }
 
 function SearchField({ initial, placeholder, paramName, className, inputClassName }: { initial: string; placeholder: string; paramName: string; className?: string; inputClassName?: string }) {
@@ -24,6 +23,16 @@ function SearchField({ initial, placeholder, paramName, className, inputClassNam
   const searchParams = useSearchParams();
   const [value, setValue] = useState(initial);
   const inputRef = useRef<HTMLInputElement>(null);
+  // What this component itself last wrote to the URL, so its own debounced navigation doesn't look like an external change.
+  const lastPushed = useRef(initial);
+
+  useEffect(() => {
+    // Someone else changed the URL (e.g. "Clear filters"): sync the field without stealing focus via a remount.
+    if (initial !== lastPushed.current) {
+      lastPushed.current = initial;
+      setValue(initial);
+    }
+  }, [initial]);
 
   useEffect(() => {
     if (value.trim() === initial) return;
@@ -33,6 +42,7 @@ function SearchField({ initial, placeholder, paramName, className, inputClassNam
       else next.delete(paramName);
       next.delete("page");
       const qs = next.toString();
+      lastPushed.current = value.trim();
       router.replace(qs ? `${pathname}?${qs}` : pathname);
     }, DEBOUNCE_MS);
     return () => clearTimeout(handle);
