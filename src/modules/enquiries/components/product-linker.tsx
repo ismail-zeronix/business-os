@@ -151,29 +151,52 @@ export function EnquiryProductLinker({
                 </li>
               ))}
             </ul>
+          ) : !searching ? (
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <p className="text-xs text-muted-foreground">{query.trim().length >= 2 ? "No products match." : "No match in the catalog."}</p>
+              <FormDrawer
+                trigger={
+                  <Button size="sm" variant="default" type="button">
+                    <Plus aria-hidden /> Create product
+                  </Button>
+                }
+                title="Create product"
+                description="Created as a temporary product and linked to this requirement. You can curate it later."
+              >
+                <EnquiryItemProductForm itemId={itemId} defaults={createDefaults} brandOptions={brandOptions} categoryOptions={categoryOptions} rememberDefault={remember} />
+              </FormDrawer>
+              <div className="flex items-center gap-2">
+                <Checkbox id={`remember-${itemId}`} checked={remember} onCheckedChange={(v) => setRemember(v === true)} />
+                <Label htmlFor={`remember-${itemId}`} className="text-xs font-normal text-muted-foreground">
+                  Remember <span className="font-medium text-foreground">&ldquo;{aliasWording || "this wording"}&rdquo;</span> as an alias
+                </Label>
+              </div>
+            </div>
           ) : (
-            <p className="text-xs text-muted-foreground">{searching ? "Searching..." : query.trim().length >= 2 ? "No products match. You can create one." : "No suggestions. Search, or create a product."}</p>
+            <p className="text-xs text-muted-foreground">Searching...</p>
           )}
 
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Checkbox id={`remember-${itemId}`} checked={remember} onCheckedChange={(v) => setRemember(v === true)} />
-              <Label htmlFor={`remember-${itemId}`} className="text-xs font-normal text-muted-foreground">
-                Remember <span className="font-medium text-foreground">&ldquo;{aliasWording || "this wording"}&rdquo;</span> as an alias
-              </Label>
+          {rows.length ? (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Checkbox id={`remember-${itemId}`} checked={remember} onCheckedChange={(v) => setRemember(v === true)} />
+                <Label htmlFor={`remember-${itemId}`} className="text-xs font-normal text-muted-foreground">
+                  Remember <span className="font-medium text-foreground">&ldquo;{aliasWording || "this wording"}&rdquo;</span> as an alias
+                </Label>
+              </div>
+              <FormDrawer
+                trigger={
+                  <Button size="xs" variant="outline" type="button">
+                    <Plus aria-hidden /> Create product
+                  </Button>
+                }
+                title="Create product"
+                description="Created as a temporary product and linked to this requirement. You can curate it later."
+              >
+                <EnquiryItemProductForm itemId={itemId} defaults={createDefaults} brandOptions={brandOptions} categoryOptions={categoryOptions} rememberDefault={remember} />
+              </FormDrawer>
             </div>
-            <FormDrawer
-              trigger={
-                <Button size="xs" variant="outline" type="button">
-                  <Plus aria-hidden /> Create product
-                </Button>
-              }
-              title="Create product"
-              description="Created as a temporary product and linked to this requirement. You can curate it later."
-            >
-              <EnquiryItemProductForm itemId={itemId} defaults={createDefaults} brandOptions={brandOptions} categoryOptions={categoryOptions} rememberDefault={remember} />
-            </FormDrawer>
-          </div>
+          ) : null}
         </div>
       ) : null}
     </div>
