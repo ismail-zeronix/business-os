@@ -151,9 +151,9 @@ export function EnquiryProductLinker({
                 </li>
               ))}
             </ul>
-          ) : !searching ? (
+          ) : (
             <div className="space-y-2 rounded-lg border border-dashed p-3">
-              <p className="text-xs text-muted-foreground">{query.trim().length >= 2 ? "No products match." : "No match in the catalog."}</p>
+              <p className="text-xs text-muted-foreground">{searching ? "Searching..." : query.trim().length >= 2 ? "No products match." : "No match in the catalog."}</p>
               <FormDrawer
                 trigger={
                   <Button size="sm" variant="default" type="button">
@@ -172,8 +172,6 @@ export function EnquiryProductLinker({
                 </Label>
               </div>
             </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">Searching...</p>
           )}
 
           {rows.length ? (

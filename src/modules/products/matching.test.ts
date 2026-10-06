@@ -50,11 +50,19 @@ describe("findMatchCandidates", () => {
     expect(candidates).toEqual([expect.objectContaining({ productId: e14.id, basis: "MODEL", strength: "PROBABLE" })]);
   });
 
-  it("layer 2: the canonical key does not merge genuinely different models", async () => {
-    const t14 = await product({ name: "TEST Lenovo T14 G4", brandId: lenovoId, model: "T14 G4" });
-    await product({ name: "TEST Lenovo T15 G4", brandId: lenovoId, model: "T15 G4" });
-    const candidates = await findMatchCandidates(testDb, { model: "T14 Gen 4", brandText: "Lenovo" });
-    expect(candidates.map((c) => c.productId)).toEqual([t14.id]);
+  it("layer 2: the canonical key does not reach a different generation or a different model family", async () => {
+    const e14g7 = await product({ name: "TEST Lenovo E14 G7", brandId: lenovoId, model: "E14 G7" });
+    await product({ name: "TEST Lenovo E14 G8", brandId: lenovoId, model: "E14 G8" });
+    await product({ name: "TEST Lenovo E15 G7", brandId: lenovoId, model: "E15 G7" });
+    const candidates = await findMatchCandidates(testDb, { model: "E14 Gen 7", brandText: "Lenovo" });
+    expect(candidates.map((c) => c.productId)).toEqual([e14g7.id]);
+  });
+
+  it("layer 2: a model that is entirely a specification (no canonical key) still matches by the plain text, not an error", async () => {
+    const v15 = await product({ name: "TEST Lenovo V15 16GB", brandId: lenovoId, model: "16GB" });
+    // canonicalModelKey("16GB") is null (a capacity, not a model); the plain-text branch alone must still work.
+    expect((await findMatchCandidates(testDb, { model: "16GB", brandText: "Lenovo" }))[0]).toMatchObject({ productId: v15.id, strength: "PROBABLE" });
+    expect(await findMatchCandidates(testDb, { model: "32GB", brandText: "Lenovo" })).toEqual([]);
   });
 
   it("layer 2: a product found by both the plain and canonical key is proposed once, not twice", async () => {

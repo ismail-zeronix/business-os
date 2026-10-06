@@ -913,11 +913,13 @@ The gap phases 3-4 named above and left out of scope ("a text/normalized-model k
   1. **Genuine catalog/data gaps** (most of the 52): server build-to-order line items copied from a Dell BOM (part codes like `540-BBVL`, `400-BOPZ`, `0GMW01`). Checked directly against `broadcast_items`: no supplier has ever broadcast these exact codes either. No matching logic can find a product that exists in neither the catalog nor any broadcast — this needs catalog growth, not better matching.
   2. **A real matching bug** (confirmed on the Lenovo E14 / Dell Latitude 7440/7450 items): `products.model_key` (`canonicalModelKey` — "Gen 7" = "G7", strips leaking specs such as "7440 Ci5-1335U") is already correctly populated on every product (`products/service.ts`), already used by `broadcasts/service.ts:123` to group variants, and even by the paused AI layer's `searchProcurement` (2026-09-27 AI-layer note above: "E14 Gen 7" finds "E14 G7"). But `findMatchCandidates`'s Layer 2 (model match) only ever compares the plain `normalizedModel` string, never `modelKey`. Real impact: 23 CONFIRMED, linked, priced broadcast items exist for exactly these Lenovo E14 / Dell Latitude model families — invisible to enquiry matching purely because of this.
 
-**Fix (small; no schema or migration change — `products.model_key` and its index already exist):** add a `modelKey`-based lookup to Layer 2 of `findMatchCandidates`, using `canonicalModelKey(input.model)` against `products.modelKey`, the same way `broadcasts/service.ts` already does. Keep the existing `normalizedModel` exact check alongside it (cheap, already indexed); a candidate found by either key is ranked by the same existing strength rules (brand agreement -> PROBABLE/POSSIBLE). No change to `verdict.ts`, `pickAutoLink`, or the phase-4 gating logic — this only changes whether a candidate is found, never how it is ranked or whether it auto-links.
+**Fix (small; no schema or migration change — `products.model_key` and its index already exist):** add a `modelKey`-based lookup to Layer 2 of `findMatchCandidates`, using `canonicalModelKey(input.model)` against `products.modelKey`, the same way `broadcasts/service.ts` already does. Keep the existing `normalizedModel` exact check alongside it (cheap, already indexed); a candidate found by either key is ranked by the same existing strength rules (brand agreement -> PROBABLE/POSSIBLE). No change to `verdict.ts`, `pickAutoLink`, or the phase-4 gating logic — this only changes whether a candidate is found, never how `pickAutoLink`/`pickAutoLinkWithSpecs` rank or pick among whatever candidates they are given. Caveat found in final review: `broadcasts/service.ts`'s `resolveProductForItem` branches on `candidates.length` *before* calling `pickAutoLink`, so widening Layer 2 does change broadcast ingestion specifically — see the "Side effect" note added to `docs/modules/BROADCASTS.md`'s Matching section.
 
 **UI (small polish, not a rebuild):** in `EnquiryProductLinker` (`src/modules/enquiries/components/product-linker.tsx`), when both `candidates` and the live search are empty, promote "Create product" from a secondary button below the search box to the primary action next to the existing "No suggestions..." message. Cause 1 above will still correctly produce empty results after the matching fix, and for that case a one-click "Create product" is the real fast path, not a search box that stays empty. The picker, verdict pill and the bulk "Confirm N ready requirements" flow (`item-controls.tsx`) are otherwise unchanged — they already degrade correctly today, and the matching fix only makes the verdict pill fire far more often instead of almost never.
 
-**Testing:** extend `src/modules/products/matching.test.ts` (existing, pure-logic, no DB) with a case proving a `modelKey` match is found when `normalizedModel` differs ("E14 Gen 7" finding a product keyed "E14 G7") and a negative case (different model families must not collide on a shared key). Manual verification against the project database: re-run the same read-only check used to find this gap and confirm the Lenovo E14 / Dell Latitude items now return at least one candidate; confirm the server-BOM-part items still correctly return zero (expected, not a regression) and now show the promoted "Create product" action.
+**Testing:** extend `src/modules/products/matching.test.ts` (existing, integration-style against the real `*_test` database via `resetDatabase`/`createProduct`, not pure-logic) with a case proving a `modelKey` match is found when `normalizedModel` differs ("E14 Gen 7" finding a product keyed "E14 G7") and a negative case (different model families must not collide on a shared key). Manual verification against the project database: re-run the same read-only check used to find this gap and confirm the Lenovo E14 / Dell Latitude items now return at least one candidate; confirm the server-BOM-part items still correctly return zero (expected, not a regression) and now show the promoted "Create product" action.
+
+**Status (2026-10-06, built):** Task 1 and Task 2 done — see their checked steps below. `findMatchCandidates` now matches on `modelKey` alongside `normalizedModel` (17 tests in `matching.test.ts`, all passing, including a canonical-key positive, a "does not reach a different generation or family" negative, a null-canonical-key fallback, and a once-not-twice dedup case); real-data check against the project database confirmed Lenovo E14 / Dell Latitude 7440/7450 items now return a candidate and the server-BOM-part items correctly still return zero. `EnquiryProductLinker` promotes "Create product" to the primary action when there are no candidates and no live search result; a final review found and this fixed an unmount/remount flicker across the `searching` transition (the Create-product block and its drawer now stay mounted throughout, only the message text changes). **Not verified in a browser**: no real sign-in session was available this session (per the project's no-dev-actor-bypass rule for browser testing) — a person should open a PENDING item with no candidates and confirm the primary "Create product" button renders immediately and stays visible while typing a search, then open a Lenovo E14 or Dell Latitude 7440/7450 item and confirm the candidate list is now populated. **Noted, not fixed here:** this widens `resolveProductForItem`'s auto-create-vs-leave-unlinked split for broadcast ingestion too (see `docs/modules/BROADCASTS.md`); existing broadcast tests are unaffected. **Deferred (minor, not fixed):** the local variable `modelKey` in `matching.ts` (plain-text) and the `modelKey` Prisma column (canonical) share a name, which is a mild foot-gun for a future edit; Layer 2 has no `take` limit on how many rows a popular canonical key can return, unlike the sibling lookup in `broadcasts/service.ts` which caps at 25.
 
 **Out of scope for this fix:** loosening matching further (fuzzy text, partial model matches) — only the already-populated, already-intentional `modelKey` canonicalization is used, nothing new or fuzzy; the server-BOM-parts category, which needs catalog growth via "Create product", not better matching.
 
@@ -931,7 +933,7 @@ The gap phases 3-4 named above and left out of scope ("a text/normalized-model k
 - Consumes: `canonicalModelKey(model: string | null | undefined): string | null` from `../specs/model-key` (existing, unchanged).
 - Produces: no change to `findMatchCandidates`'s signature, `MatchCandidate` shape, or `pickAutoLink`/`pickAutoLinkWithSpecs` — only which rows Layer 2 proposes.
 
-- [ ] **Step 1: Write the three failing tests**
+- [x] **Step 1: Write the three failing tests**
 
 Add inside the existing `describe("findMatchCandidates", ...)` block in `src/modules/products/matching.test.ts`, right after the "layer 2: a product with no brand is not ruled out..." test (after line 45):
 
@@ -956,12 +958,12 @@ Add inside the existing `describe("findMatchCandidates", ...)` block in `src/mod
   });
 ```
 
-- [ ] **Step 2: Run the tests to verify the first two fail**
+- [x] **Step 2: Run the tests to verify the first two fail**
 
 Run: `npx vitest run src/modules/products/matching.test.ts`
 Expected: the new "matches by canonical key" test FAILS (`candidates` is `[]` — this is the bug being fixed); the new "does not merge genuinely different models" test PASSES already (nothing to merge yet, since canonical-key matching doesn't exist); the new "proposed once, not twice" test PASSES already (only the plain-key path exists today). Every pre-existing test in the file still passes. This is expected — only one of the three new tests is the actual regression test for the bug.
 
-- [ ] **Step 3: Add the canonical-key import and local key**
+- [x] **Step 3: Add the canonical-key import and local key**
 
 In `src/modules/products/matching.ts`, change line 3 and the block around line 54-56:
 
@@ -977,7 +979,7 @@ import { canonicalModelKey } from "../specs/model-key";
   const canonicalKey = canonicalModelKey(input.model);
 ```
 
-- [ ] **Step 4: Replace Layer 2 to also match on the canonical key**
+- [x] **Step 4: Replace Layer 2 to also match on the canonical key**
 
 Replace the current Layer 2 block (lines 67-75):
 
@@ -1025,17 +1027,17 @@ to:
  *   2. exact normalised model, or its canonical model key ("Gen 7" = "G7") (brand-checked) -> PROBABLE / POSSIBLE (basis MODEL)
 ```
 
-- [ ] **Step 5: Run the tests to verify all three pass, plus the whole file**
+- [x] **Step 5: Run the tests to verify all three pass, plus the whole file**
 
 Run: `npx vitest run src/modules/products/matching.test.ts`
 Expected: PASS, all tests in the file (the 3 new ones and every pre-existing one).
 
-- [ ] **Step 6: Typecheck and lint**
+- [x] **Step 6: Typecheck and lint**
 
 Run: `npm run typecheck && npm run lint`
 Expected: clean, no errors.
 
-- [ ] **Step 7: Verify against the real project database (read-only, no mutation)**
+- [x] **Step 7: Verify against the real project database (read-only, no mutation)**
 
 Run this from the repo root with `npx tsx`, pointed at the project's own `DATABASE_URL` (already in `.env`), then delete the script — it is a one-off check, not part of the test suite:
 
@@ -1062,7 +1064,7 @@ main().catch((e) => { console.error(e); process.exit(1); });
 
 Expected: the first two probes now return at least one candidate (they returned zero before this task); the third still returns zero (confirms the fix did not accidentally start guessing on genuine catalog gaps). Delete the scratch file afterward.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/modules/products/matching.ts src/modules/products/matching.test.ts docs/plans/active/CURRENT.md
@@ -1085,12 +1087,12 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Consumes: `rows` (existing local computed array — candidates plus live search results, already deduplicated), `searching` (existing local boolean), `remember`/`setRemember`/`aliasWording`/`createDefaults`/`brandOptions`/`categoryOptions`/`itemId` (existing props/state — unchanged).
 - Produces: no new props, no new exports. Purely a layout change inside one existing component.
 
-- [ ] **Step 1: Read the current block to confirm line numbers before editing**
+- [x] **Step 1: Read the current block to confirm line numbers before editing**
 
 Run: `grep -n "showPicker ?" -A 45 src/modules/enquiries/components/product-linker.tsx`
 Expected: the block starting `{showPicker ? (` through its closing `) : null}`, matching the content already shown during planning — confirm it has not changed since (this file is also touched by other in-flight work on this branch).
 
-- [ ] **Step 2: Replace the rows-rendering and action-row section**
+- [x] **Step 2: Replace the rows-rendering and action-row section**
 
 Inside the `showPicker` block, replace this (the "no rows" message and the bottom action row):
 
@@ -1211,7 +1213,7 @@ with:
 
 This keeps exactly one `FormDrawer`/`EnquiryItemProductForm` mounted at a time (the two branches are mutually exclusive on `rows.length`), so there is never a duplicate drawer. When there are no rows, the "Create product" button is `variant="default"` (primary) and sits directly under the message instead of at the bottom behind a search box; when there are rows, the layout is unchanged from today (outline button, bottom row).
 
-- [ ] **Step 3: Typecheck and lint**
+- [x] **Step 3: Typecheck and lint**
 
 Run: `npm run typecheck && npm run lint`
 Expected: clean, no errors.
@@ -1223,7 +1225,7 @@ Open an enquiry item that is PENDING with no product linked and no candidates to
 - Clicking it opens the same drawer as before and creating a product still links it to the item exactly as today.
 - Open a second PENDING item whose model text now matches via Task 1 (e.g. a Lenovo E14 or Dell Latitude 7440/7450 item) and confirm the candidate list now shows at least one row with a strength badge, and the bottom-row "Create product" (outline, secondary) still works unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/modules/enquiries/components/product-linker.tsx docs/plans/active/CURRENT.md
