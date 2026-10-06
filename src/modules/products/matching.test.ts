@@ -44,6 +44,25 @@ describe("findMatchCandidates", () => {
     expect((await findMatchCandidates(testDb, { model: "5440", brandText: "Dell" }))[0]).toMatchObject({ productId: unbranded.id, strength: "POSSIBLE" });
   });
 
+  it("layer 2: a model written two ways matches by canonical key even when the exact text differs", async () => {
+    const e14 = await product({ name: "TEST Lenovo E14 G7", brandId: lenovoId, model: "E14 G7" });
+    const candidates = await findMatchCandidates(testDb, { model: "E14 Gen 7", brandText: "Lenovo" });
+    expect(candidates).toEqual([expect.objectContaining({ productId: e14.id, basis: "MODEL", strength: "PROBABLE" })]);
+  });
+
+  it("layer 2: the canonical key does not merge genuinely different models", async () => {
+    const t14 = await product({ name: "TEST Lenovo T14 G4", brandId: lenovoId, model: "T14 G4" });
+    await product({ name: "TEST Lenovo T15 G4", brandId: lenovoId, model: "T15 G4" });
+    const candidates = await findMatchCandidates(testDb, { model: "T14 Gen 4", brandText: "Lenovo" });
+    expect(candidates.map((c) => c.productId)).toEqual([t14.id]);
+  });
+
+  it("layer 2: a product found by both the plain and canonical key is proposed once, not twice", async () => {
+    const latitude = await product({ name: "TEST Dell Latitude 5440", brandId: dellId, model: "5440" });
+    const candidates = await findMatchCandidates(testDb, { model: "5440", brandText: "Dell" });
+    expect(candidates).toEqual([expect.objectContaining({ productId: latitude.id })]);
+  });
+
   it("layer 3: a unique alias is PROBABLE", async () => {
     const v15 = await product({ name: "TEST Lenovo V15 G4 IRU", brandId: lenovoId, partNumber: "83A100SUAK" });
     await alias(v15.id, "V15G4");

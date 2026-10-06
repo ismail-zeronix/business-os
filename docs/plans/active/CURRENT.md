@@ -905,6 +905,339 @@ Task 4's five gating cases (`verify-gating.ts`, scratch, deleted) all passed aga
 
 **Known limits:** `keyboard_lang` (keyboard layout, e.g. "Arabic keyboard") defaults to MUST importance in the registry — a phase-1 setting, unchanged by phases 3-4 — and while the product-side extractor can read keyboard language perfectly well (it is the same parser the requirement side uses, and `product_attributes` holds the key — see `docs/modules/PRODUCTS.md`), no product's actual catalog name or description in this business's data happens to mention one today, so the attribute has zero coverage across active products in the project database (confirmed: 0 of 302). The practical effect: any enquiry line whose wording mentions a keyboard language is now permanently blocked from auto-linking, forced to human review every time, regardless of how good the actual product match is, because no product currently carries a value for that MUST attribute (nothing in the code prevents one; the source text simply never states it). This is not a bug in what was built — the gating logic does exactly what the plan specifies — but it is a real limitation the owner should know about and may want to address (for example, lowering `keyboard_lang`'s default importance in the registry), outside this plan's scope. Separately, phase 3's ranking and display could not be exercised end-to-end on live PENDING data because the pre-existing matching module returns zero candidates for every current PENDING item (see Task 3 above): the verdict/ranking logic itself is verified correct against real data, but a person doing a browser check today will not see a populated, ranked candidate list on an existing item without first adding a broadcast or enquiry whose model text actually collides with a product's normalized model or part number.
 
+## Matching-key gap: plan to close it (2026-10-06)
+
+The gap phases 3-4 named above and left out of scope ("a text/normalized-model key mismatch in the existing matching module, unrelated to this plan") was re-investigated while planning a UI simplification for enquiry matching, with fresh evidence against the project database:
+
+- Of 53 unlinked enquiry items carrying a part number or model text, `findMatchCandidates` (`src/modules/products/matching.ts`) returns zero candidates for 52 (98%). Two distinct causes, confirmed separately:
+  1. **Genuine catalog/data gaps** (most of the 52): server build-to-order line items copied from a Dell BOM (part codes like `540-BBVL`, `400-BOPZ`, `0GMW01`). Checked directly against `broadcast_items`: no supplier has ever broadcast these exact codes either. No matching logic can find a product that exists in neither the catalog nor any broadcast — this needs catalog growth, not better matching.
+  2. **A real matching bug** (confirmed on the Lenovo E14 / Dell Latitude 7440/7450 items): `products.model_key` (`canonicalModelKey` — "Gen 7" = "G7", strips leaking specs such as "7440 Ci5-1335U") is already correctly populated on every product (`products/service.ts`), already used by `broadcasts/service.ts:123` to group variants, and even by the paused AI layer's `searchProcurement` (2026-09-27 AI-layer note above: "E14 Gen 7" finds "E14 G7"). But `findMatchCandidates`'s Layer 2 (model match) only ever compares the plain `normalizedModel` string, never `modelKey`. Real impact: 23 CONFIRMED, linked, priced broadcast items exist for exactly these Lenovo E14 / Dell Latitude model families — invisible to enquiry matching purely because of this.
+
+**Fix (small; no schema or migration change — `products.model_key` and its index already exist):** add a `modelKey`-based lookup to Layer 2 of `findMatchCandidates`, using `canonicalModelKey(input.model)` against `products.modelKey`, the same way `broadcasts/service.ts` already does. Keep the existing `normalizedModel` exact check alongside it (cheap, already indexed); a candidate found by either key is ranked by the same existing strength rules (brand agreement -> PROBABLE/POSSIBLE). No change to `verdict.ts`, `pickAutoLink`, or the phase-4 gating logic — this only changes whether a candidate is found, never how it is ranked or whether it auto-links.
+
+**UI (small polish, not a rebuild):** in `EnquiryProductLinker` (`src/modules/enquiries/components/product-linker.tsx`), when both `candidates` and the live search are empty, promote "Create product" from a secondary button below the search box to the primary action next to the existing "No suggestions..." message. Cause 1 above will still correctly produce empty results after the matching fix, and for that case a one-click "Create product" is the real fast path, not a search box that stays empty. The picker, verdict pill and the bulk "Confirm N ready requirements" flow (`item-controls.tsx`) are otherwise unchanged — they already degrade correctly today, and the matching fix only makes the verdict pill fire far more often instead of almost never.
+
+**Testing:** extend `src/modules/products/matching.test.ts` (existing, pure-logic, no DB) with a case proving a `modelKey` match is found when `normalizedModel` differs ("E14 Gen 7" finding a product keyed "E14 G7") and a negative case (different model families must not collide on a shared key). Manual verification against the project database: re-run the same read-only check used to find this gap and confirm the Lenovo E14 / Dell Latitude items now return at least one candidate; confirm the server-BOM-part items still correctly return zero (expected, not a regression) and now show the promoted "Create product" action.
+
+**Out of scope for this fix:** loosening matching further (fuzzy text, partial model matches) — only the already-populated, already-intentional `modelKey` canonicalization is used, nothing new or fuzzy; the server-BOM-parts category, which needs catalog growth via "Create product", not better matching.
+
+### Task 1: Canonical-key layer in `findMatchCandidates`
+
+**Files:**
+- Modify: `src/modules/products/matching.ts` (Layer 2, lines 67-75; doc comment lines 7-14; imports line 3)
+- Test: `src/modules/products/matching.test.ts` (new cases inside the existing `describe("findMatchCandidates", ...)` block)
+
+**Interfaces:**
+- Consumes: `canonicalModelKey(model: string | null | undefined): string | null` from `../specs/model-key` (existing, unchanged).
+- Produces: no change to `findMatchCandidates`'s signature, `MatchCandidate` shape, or `pickAutoLink`/`pickAutoLinkWithSpecs` — only which rows Layer 2 proposes.
+
+- [ ] **Step 1: Write the three failing tests**
+
+Add inside the existing `describe("findMatchCandidates", ...)` block in `src/modules/products/matching.test.ts`, right after the "layer 2: a product with no brand is not ruled out..." test (after line 45):
+
+```ts
+  it("layer 2: a model written two ways matches by canonical key even when the exact text differs", async () => {
+    const e14 = await product({ name: "TEST Lenovo E14 G7", brandId: lenovoId, model: "E14 G7" });
+    const candidates = await findMatchCandidates(testDb, { model: "E14 Gen 7", brandText: "Lenovo" });
+    expect(candidates).toEqual([expect.objectContaining({ productId: e14.id, basis: "MODEL", strength: "PROBABLE" })]);
+  });
+
+  it("layer 2: the canonical key does not merge genuinely different models", async () => {
+    const t14 = await product({ name: "TEST Lenovo T14 G4", brandId: lenovoId, model: "T14 G4" });
+    await product({ name: "TEST Lenovo T15 G4", brandId: lenovoId, model: "T15 G4" });
+    const candidates = await findMatchCandidates(testDb, { model: "T14 Gen 4", brandText: "Lenovo" });
+    expect(candidates.map((c) => c.productId)).toEqual([t14.id]);
+  });
+
+  it("layer 2: a product found by both the plain and canonical key is proposed once, not twice", async () => {
+    const latitude = await product({ name: "TEST Dell Latitude 5440", brandId: dellId, model: "5440" });
+    const candidates = await findMatchCandidates(testDb, { model: "5440", brandText: "Dell" });
+    expect(candidates).toEqual([expect.objectContaining({ productId: latitude.id })]);
+  });
+```
+
+- [ ] **Step 2: Run the tests to verify the first two fail**
+
+Run: `npx vitest run src/modules/products/matching.test.ts`
+Expected: the new "matches by canonical key" test FAILS (`candidates` is `[]` — this is the bug being fixed); the new "does not merge genuinely different models" test PASSES already (nothing to merge yet, since canonical-key matching doesn't exist); the new "proposed once, not twice" test PASSES already (only the plain-key path exists today). Every pre-existing test in the file still passes. This is expected — only one of the three new tests is the actual regression test for the bug.
+
+- [ ] **Step 3: Add the canonical-key import and local key**
+
+In `src/modules/products/matching.ts`, change line 3 and the block around line 54-56:
+
+```ts
+import { normalizeCode, normalizeCodeOrNull, normalizeName } from "../../lib/normalize";
+import { canonicalModelKey } from "../specs/model-key";
+```
+
+```ts
+  const brandKey = input.brandText?.trim() ? normalizeName(input.brandText) : null;
+  const partNumberKey = normalizeCodeOrNull(input.partNumber);
+  const modelKey = normalizeCodeOrNull(input.model);
+  const canonicalKey = canonicalModelKey(input.model);
+```
+
+- [ ] **Step 4: Replace Layer 2 to also match on the canonical key**
+
+Replace the current Layer 2 block (lines 67-75):
+
+```ts
+  // Layer 2: exact model. A matching brand makes it PROBABLE; unknown brand on either side leaves it POSSIBLE.
+  if (modelKey) {
+    const byModel = await db.product.findMany({ where: { normalizedModel: modelKey, ...notArchived }, select: productSelect });
+    for (const product of byModel) {
+      if (brandConflicts(brandKey, product)) continue;
+      const brandAgrees = Boolean(brandKey && product.brand && product.brand.normalizedName === brandKey);
+      propose(product, "MODEL", brandAgrees ? "PROBABLE" : "POSSIBLE");
+    }
+  }
+```
+
+with:
+
+```ts
+  // Layer 2: exact model, by either the plain normalised text or its canonical model key ("Gen 7" = "G7"; a CPU or
+  // capacity that leaked into the model field is stripped first — see specs/model-key.ts). The same product can match
+  // both ways; `propose` already keeps one row per product. A matching brand makes it PROBABLE; unknown brand on
+  // either side leaves it POSSIBLE.
+  const modelOr: ({ normalizedModel: string } | { modelKey: string })[] = [];
+  if (modelKey) modelOr.push({ normalizedModel: modelKey });
+  if (canonicalKey) modelOr.push({ modelKey: canonicalKey });
+  if (modelOr.length) {
+    const byModel = await db.product.findMany({ where: { OR: modelOr, ...notArchived }, select: productSelect });
+    for (const product of byModel) {
+      if (brandConflicts(brandKey, product)) continue;
+      const brandAgrees = Boolean(brandKey && product.brand && product.brand.normalizedName === brandKey);
+      propose(product, "MODEL", brandAgrees ? "PROBABLE" : "POSSIBLE");
+    }
+  }
+```
+
+Also update the layer list in the doc comment at the top of the file (line 10) from:
+
+```ts
+ *   2. exact normalised model (brand-checked)  -> PROBABLE / POSSIBLE (basis MODEL)
+```
+
+to:
+
+```ts
+ *   2. exact normalised model, or its canonical model key ("Gen 7" = "G7") (brand-checked) -> PROBABLE / POSSIBLE (basis MODEL)
+```
+
+- [ ] **Step 5: Run the tests to verify all three pass, plus the whole file**
+
+Run: `npx vitest run src/modules/products/matching.test.ts`
+Expected: PASS, all tests in the file (the 3 new ones and every pre-existing one).
+
+- [ ] **Step 6: Typecheck and lint**
+
+Run: `npm run typecheck && npm run lint`
+Expected: clean, no errors.
+
+- [ ] **Step 7: Verify against the real project database (read-only, no mutation)**
+
+Run this from the repo root with `npx tsx`, pointed at the project's own `DATABASE_URL` (already in `.env`), then delete the script — it is a one-off check, not part of the test suite:
+
+```ts
+// scratch: verify-matching-fix.TEST.ts — read-only, delete after running
+import "dotenv/config";
+import { db } from "./src/core/database/client";
+import { findMatchCandidates } from "./src/modules/products/matching";
+
+async function main() {
+  const probes = [
+    { model: "E14 Gen 7", brandText: "Lenovo" },
+    { model: "7440", brandText: "Dell" },
+    { partNumber: "540-BBVL" }, // expected to still return zero — genuine catalog gap, not this fix's job
+  ];
+  for (const probe of probes) {
+    const candidates = await findMatchCandidates(db, probe);
+    console.log(JSON.stringify(probe), "->", candidates.length, "candidate(s)", candidates[0]?.name ?? "");
+  }
+  await db.$disconnect();
+}
+main().catch((e) => { console.error(e); process.exit(1); });
+```
+
+Expected: the first two probes now return at least one candidate (they returned zero before this task); the third still returns zero (confirms the fix did not accidentally start guessing on genuine catalog gaps). Delete the scratch file afterward.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/modules/products/matching.ts src/modules/products/matching.test.ts docs/plans/active/CURRENT.md
+git commit -m "fix: findMatchCandidates also matches on the canonical model key
+
+Layer 2 only ever compared the plain normalised model text, never the
+already-populated products.model_key (Gen 7 = G7, CPU/capacity specs
+stripped) that broadcasts.service.ts and the AI search path already use.
+Closes the gap phases 3-4 named and left out of scope on 2026-09-29.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
+### Task 2: Promote "Create product" when nothing matches
+
+**Files:**
+- Modify: `src/modules/enquiries/components/product-linker.tsx` (the `showPicker` block, roughly lines 134-178)
+
+**Interfaces:**
+- Consumes: `rows` (existing local computed array — candidates plus live search results, already deduplicated), `searching` (existing local boolean), `remember`/`setRemember`/`aliasWording`/`createDefaults`/`brandOptions`/`categoryOptions`/`itemId` (existing props/state — unchanged).
+- Produces: no new props, no new exports. Purely a layout change inside one existing component.
+
+- [ ] **Step 1: Read the current block to confirm line numbers before editing**
+
+Run: `grep -n "showPicker ?" -A 45 src/modules/enquiries/components/product-linker.tsx`
+Expected: the block starting `{showPicker ? (` through its closing `) : null}`, matching the content already shown during planning — confirm it has not changed since (this file is also touched by other in-flight work on this branch).
+
+- [ ] **Step 2: Replace the rows-rendering and action-row section**
+
+Inside the `showPicker` block, replace this (the "no rows" message and the bottom action row):
+
+```tsx
+          {rows.length ? (
+            <ul className="divide-y rounded-lg border bg-background">
+              {rows.map((row) => (
+                <li key={row.id} className="flex items-center justify-between gap-3 px-2.5 py-1.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm">{row.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {row.brandName ?? "No brand"}
+                      {row.partNumber ? <span className="font-mono"> · {row.partNumber}</span> : null}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {row.overall ? <SpecVerdictPill verdict={row.overall} title={specExplanation(row.perRequirement ?? [])} /> : null}
+                    {row.badge ? <Badge variant={STRENGTH_LABEL[row.badge].variant}>{STRENGTH_LABEL[row.badge].label}</Badge> : null}
+                    {linkForm(row.id, "Link", row.badge === "EXACT" ? "default" : "outline")}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground">{searching ? "Searching..." : query.trim().length >= 2 ? "No products match. You can create one." : "No suggestions. Search, or create a product."}</p>
+          )}
+
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Checkbox id={`remember-${itemId}`} checked={remember} onCheckedChange={(v) => setRemember(v === true)} />
+              <Label htmlFor={`remember-${itemId}`} className="text-xs font-normal text-muted-foreground">
+                Remember <span className="font-medium text-foreground">&ldquo;{aliasWording || "this wording"}&rdquo;</span> as an alias
+              </Label>
+            </div>
+            <FormDrawer
+              trigger={
+                <Button size="xs" variant="outline" type="button">
+                  <Plus aria-hidden /> Create product
+                </Button>
+              }
+              title="Create product"
+              description="Created as a temporary product and linked to this requirement. You can curate it later."
+            >
+              <EnquiryItemProductForm itemId={itemId} defaults={createDefaults} brandOptions={brandOptions} categoryOptions={categoryOptions} rememberDefault={remember} />
+            </FormDrawer>
+          </div>
+```
+
+with:
+
+```tsx
+          {rows.length ? (
+            <ul className="divide-y rounded-lg border bg-background">
+              {rows.map((row) => (
+                <li key={row.id} className="flex items-center justify-between gap-3 px-2.5 py-1.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm">{row.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {row.brandName ?? "No brand"}
+                      {row.partNumber ? <span className="font-mono"> · {row.partNumber}</span> : null}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {row.overall ? <SpecVerdictPill verdict={row.overall} title={specExplanation(row.perRequirement ?? [])} /> : null}
+                    {row.badge ? <Badge variant={STRENGTH_LABEL[row.badge].variant}>{STRENGTH_LABEL[row.badge].label}</Badge> : null}
+                    {linkForm(row.id, "Link", row.badge === "EXACT" ? "default" : "outline")}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : !searching ? (
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <p className="text-xs text-muted-foreground">{query.trim().length >= 2 ? "No products match." : "No match in the catalog."}</p>
+              <FormDrawer
+                trigger={
+                  <Button size="sm" variant="default" type="button">
+                    <Plus aria-hidden /> Create product
+                  </Button>
+                }
+                title="Create product"
+                description="Created as a temporary product and linked to this requirement. You can curate it later."
+              >
+                <EnquiryItemProductForm itemId={itemId} defaults={createDefaults} brandOptions={brandOptions} categoryOptions={categoryOptions} rememberDefault={remember} />
+              </FormDrawer>
+              <div className="flex items-center gap-2">
+                <Checkbox id={`remember-${itemId}`} checked={remember} onCheckedChange={(v) => setRemember(v === true)} />
+                <Label htmlFor={`remember-${itemId}`} className="text-xs font-normal text-muted-foreground">
+                  Remember <span className="font-medium text-foreground">&ldquo;{aliasWording || "this wording"}&rdquo;</span> as an alias
+                </Label>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">Searching...</p>
+          )}
+
+          {rows.length ? (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Checkbox id={`remember-${itemId}`} checked={remember} onCheckedChange={(v) => setRemember(v === true)} />
+                <Label htmlFor={`remember-${itemId}`} className="text-xs font-normal text-muted-foreground">
+                  Remember <span className="font-medium text-foreground">&ldquo;{aliasWording || "this wording"}&rdquo;</span> as an alias
+                </Label>
+              </div>
+              <FormDrawer
+                trigger={
+                  <Button size="xs" variant="outline" type="button">
+                    <Plus aria-hidden /> Create product
+                  </Button>
+                }
+                title="Create product"
+                description="Created as a temporary product and linked to this requirement. You can curate it later."
+              >
+                <EnquiryItemProductForm itemId={itemId} defaults={createDefaults} brandOptions={brandOptions} categoryOptions={categoryOptions} rememberDefault={remember} />
+              </FormDrawer>
+            </div>
+          ) : null}
+```
+
+This keeps exactly one `FormDrawer`/`EnquiryItemProductForm` mounted at a time (the two branches are mutually exclusive on `rows.length`), so there is never a duplicate drawer. When there are no rows, the "Create product" button is `variant="default"` (primary) and sits directly under the message instead of at the bottom behind a search box; when there are rows, the layout is unchanged from today (outline button, bottom row).
+
+- [ ] **Step 3: Typecheck and lint**
+
+Run: `npm run typecheck && npm run lint`
+Expected: clean, no errors.
+
+- [ ] **Step 4: Manual verification in a signed-in browser, against the project database**
+
+Open an enquiry item that is PENDING with no product linked and no candidates today (e.g. one of the server-BOM-part items found during planning) and confirm:
+- The "Create product" button renders immediately below the "No match in the catalog" message, styled as the primary button (filled, not outline).
+- Clicking it opens the same drawer as before and creating a product still links it to the item exactly as today.
+- Open a second PENDING item whose model text now matches via Task 1 (e.g. a Lenovo E14 or Dell Latitude 7440/7450 item) and confirm the candidate list now shows at least one row with a strength badge, and the bottom-row "Create product" (outline, secondary) still works unchanged.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/modules/enquiries/components/product-linker.tsx docs/plans/active/CURRENT.md
+git commit -m "feat: promote Create product to the primary action when nothing matches
+
+No candidates and no search result used to leave Create product as a
+small outline button below an empty search box. It is now the first
+thing shown, styled as the primary action, for the common case (now
+~90% of items with no part-number/model text to search with that still
+have no catalog match) where it is the real fast path.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
 ## Broadcast variant safety, parser v5 (2026-09-27)
 
 From the first real Red Data Computer list: parser version 5 (signature block skipped and read, price/currency false positive fixed, glued CPU+RAM split, INCOMING stock, tower category) and variant-safe product resolution for broadcast lines (`resolveProductForItem`). Verified by running the whole list through `createBroadcast` inside a rolled-back transaction on the project database: 6 lines gave 6 distinct products (the three Dell T2 lines sharing FCT2250 stayed three variants); nothing was saved. Existing broadcast, product and lib tests pass (124). This is phase 5 of the plan, built early because real data showed the collapse.

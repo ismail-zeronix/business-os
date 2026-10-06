@@ -1,13 +1,14 @@
 import type { Db } from "../../core/database/tx";
 import type { MatchBasis } from "../../generated/prisma/enums";
 import { normalizeCode, normalizeCodeOrNull, normalizeName } from "../../lib/normalize";
+import { canonicalModelKey } from "../specs/model-key";
 import { blocksAutoLink, compareRequirementsToProduct, overallVerdict, type RequirementInput } from "../specs/verdict";
 import { loadActiveAttributes } from "./attributes.service";
 
 /**
  * Product matching for broadcast items. Deterministic layers only (docs/modules/PRODUCTS.md); fuzzy and LLM matching are later layers.
  *   1. exact normalised part number            -> EXACT      (basis PART_NUMBER)
- *   2. exact normalised model (brand-checked)  -> PROBABLE / POSSIBLE (basis MODEL)
+ *   2. exact normalised model, or its canonical model key ("Gen 7" = "G7") (brand-checked) -> PROBABLE / POSSIBLE (basis MODEL)
  *   3. known alias                             -> PROBABLE / POSSIBLE (basis ALIAS)
  *   4. manual selection, or an automatic new product when nothing else matches -> decided by the caller, not produced here
  * This module only PROPOSES candidates. It never confirms anything; a person does.
@@ -54,6 +55,7 @@ export async function findMatchCandidates(db: Db, input: MatchInput): Promise<Ma
   const brandKey = input.brandText?.trim() ? normalizeName(input.brandText) : null;
   const partNumberKey = normalizeCodeOrNull(input.partNumber);
   const modelKey = normalizeCodeOrNull(input.model);
+  const canonicalKey = canonicalModelKey(input.model);
 
   // Layer 1: exact part number (the product's own, then an alias that is the part number).
   if (partNumberKey) {
@@ -64,9 +66,15 @@ export async function findMatchCandidates(db: Db, input: MatchInput): Promise<Ma
     for (const row of viaAlias) propose(row.product, "ALIAS", "PROBABLE");
   }
 
-  // Layer 2: exact model. A matching brand makes it PROBABLE; unknown brand on either side leaves it POSSIBLE.
-  if (modelKey) {
-    const byModel = await db.product.findMany({ where: { normalizedModel: modelKey, ...notArchived }, select: productSelect });
+  // Layer 2: exact model, by either the plain normalised text or its canonical model key ("Gen 7" = "G7"; a CPU or
+  // capacity that leaked into the model field is stripped first — see specs/model-key.ts). The same product can match
+  // both ways; `propose` already keeps one row per product. A matching brand makes it PROBABLE; unknown brand on
+  // either side leaves it POSSIBLE.
+  const modelOr: ({ normalizedModel: string } | { modelKey: string })[] = [];
+  if (modelKey) modelOr.push({ normalizedModel: modelKey });
+  if (canonicalKey) modelOr.push({ modelKey: canonicalKey });
+  if (modelOr.length) {
+    const byModel = await db.product.findMany({ where: { OR: modelOr, ...notArchived }, select: productSelect });
     for (const product of byModel) {
       if (brandConflicts(brandKey, product)) continue;
       const brandAgrees = Boolean(brandKey && product.brand && product.brand.normalizedName === brandKey);
