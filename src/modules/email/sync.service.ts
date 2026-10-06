@@ -167,11 +167,15 @@ export async function ingestMessage(ctx: ServiceContext, client: ImapFlow, accou
   return "ingested";
 }
 
+export type ClaimedAccount = NonNullable<Awaited<ReturnType<typeof getEmailAccountForSync>>>;
+
 /**
- * Syncs one account. Throws only when the sync cannot start (unknown or inactive account, another sync running). Failures while
- * talking to the server are recorded on the account (sanitised) and returned in `error`, not thrown.
+ * The fast half of a sync: validates the account and atomically claims its lease. No network I/O, so a caller can await this alone
+ * and run the slow half (`runClaimedSync`) separately — in the background, after its own response is sent — while still failing fast
+ * and clearly ("already running") on a double click. Throws exactly when `syncAccount` used to throw: unknown or inactive account,
+ * or another sync already running.
  */
-export async function syncAccount(ctx: ServiceContext, accountId: string): Promise<SyncResult> {
+export async function claimSync(ctx: ServiceContext, accountId: string): Promise<ClaimedAccount> {
   const account = await getEmailAccountForSync(accountId);
   if (!account) throw new NotFoundError("Email account");
   if (account.status !== "ACTIVE") throw new InvariantError("This account is not active. Activate it to sync.");
@@ -182,7 +186,16 @@ export async function syncAccount(ctx: ServiceContext, accountId: string): Promi
     data: { syncLeaseUntil: new Date(now.getTime() + LEASE_MS) },
   });
   if (claimed.count === 0) throw new ConflictError("A sync is already running for this account.");
+  return account;
+}
 
+/**
+ * The slow half of a sync: reads IMAP and stores messages, always releasing the lease and recording the result (`lastSyncAt`,
+ * `lastSyncStatus`, `lastSyncError`) in its `finally`, however it ends. Call only with the account `claimSync` just returned (its
+ * lease is already claimed; this never claims one itself). Failures while talking to the server are recorded on the account
+ * (sanitised) and returned in `error`, not thrown — the lease is always released either way.
+ */
+export async function runClaimedSync(ctx: ServiceContext, accountId: string, account: ClaimedAccount): Promise<SyncResult> {
   const result: SyncResult = { ingested: 0, skipped: 0, errors: 0, remaining: false, error: null };
   let client: ImapFlow | null = null;
   try {
@@ -249,6 +262,17 @@ export async function syncAccount(ctx: ServiceContext, accountId: string): Promi
     await writeAudit(ctx, { action: "email_account.synced", entityType: "EmailAccount", entityId: accountId, details: { ingested: result.ingested, skipped: result.skipped, errors: result.errors } });
   }
   return result;
+}
+
+/**
+ * Syncs one account start to finish: claims the lease, then runs the sync, in one call. Unchanged behaviour and signature from
+ * before `claimSync`/`runClaimedSync` existed — used by `syncAllActiveAccounts` (and so `scripts/mail-sync.ts`), which always wants
+ * to wait for the whole thing. The "Sync now" button uses the two halves separately instead, so its request does not stay open for
+ * the slow half.
+ */
+export async function syncAccount(ctx: ServiceContext, accountId: string): Promise<SyncResult> {
+  const account = await claimSync(ctx, accountId);
+  return runClaimedSync(ctx, accountId, account);
 }
 
 /** Syncs every ACTIVE account, one after another. One account failing never stops the others. Used by scripts/mail-sync.ts. */

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { NotFoundError, ValidationError } from "@/core/errors";
 import { getServiceContext } from "@/core/permissions/actor";
 import { assertAdmin } from "@/core/permissions/roles";
@@ -9,9 +10,9 @@ import { formDataToObject } from "@/core/validation/form-data";
 import { decryptSecret } from "@/core/security/secret-box";
 import { createEmailAccount, setEmailAccountStatus, updateEmailAccount } from "./account.service";
 import { testImapConnection } from "./imap";
-import { getEmailAccountForSync } from "./queries";
+import { getEmailAccountForSync, getEmailAccountSyncStatus, type SyncStatusRow } from "./queries";
 import { emailAccountCreateSchema, emailAccountStatusSchema, emailAccountTestSchema, emailAccountUpdateSchema, emailDismissSchema, emailIdSchema, emailSyncSchema } from "./schemas";
-import { syncAccount, type SyncResult } from "./sync.service";
+import { claimSync, runClaimedSync } from "./sync.service";
 import { createEnquiryFromEmail, dismissEmail, restoreEmail } from "./triage.service";
 
 /**
@@ -96,21 +97,32 @@ export async function testEmailConnectionAction(_prev: TestResult | null, formDa
 
 // ───────────────────────────────────────── sync ─────────────────────────────────────────
 
-type SyncActionResult = ActionResult<SyncResult>;
+type SyncActionResult = ActionResult<{ started: true }>;
 
 /**
- * "Sync now": reads new mail from one account (read-only) and stores it for triage. A problem talking to the server is returned in
- * `data.error` (a short sanitised sentence), together with whatever was ingested before it, so the button can report both.
+ * "Sync now": claims the account's sync lease (fast - fails immediately with a clear message if one is already running, exactly as
+ * before) and returns right away; the slow part (the actual IMAP read and store, up to MAX_PER_RUN messages) keeps running in the
+ * background via `after()` so this request does not stay open for it and the button does not sit "Syncing..." for minutes on a
+ * large mailbox. `SyncMailButton` polls `getEmailSyncStatusAction` to learn when it finishes and show the real result.
  */
 export async function syncEmailAccountAction(_prev: SyncActionResult | null, formData: FormData): Promise<SyncActionResult> {
   return runAction(async () => {
     const { id } = emailSyncSchema.parse(formDataToObject(formData));
-    const result = await syncAccount(await getServiceContext(), id);
-    revalidatePath("/enquiries");
-    revalidatePath("/settings/email");
-    revalidatePath("/", "layout");
-    return result;
+    const ctx = await getServiceContext();
+    const account = await claimSync(ctx, id);
+    after(async () => {
+      await runClaimedSync(ctx, id, account);
+      revalidatePath("/enquiries");
+      revalidatePath("/settings/email");
+      revalidatePath("/", "layout");
+    });
+    return { started: true as const };
   });
+}
+
+/** Polled by `SyncMailButton` after it starts a background sync, to show the real result once it finishes. Read-only. */
+export async function getEmailSyncStatusAction(accountId: string): Promise<SyncStatusRow | null> {
+  return getEmailAccountSyncStatus(accountId);
 }
 
 // ───────────────────────────────────────── triage ─────────────────────────────────────────

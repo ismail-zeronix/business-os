@@ -73,11 +73,27 @@ export async function getEmailAccountForSync(id: string) {
   });
 }
 
+export type SyncStatusRow = { syncing: boolean; lastSyncAt: Date | null; lastSyncStatus: EmailSyncStatus | null; lastSyncError: string | null };
+
+/** For the "Sync now" button to poll after it starts a background sync (see `syncEmailAccountAction`): is the lease still held, and
+ * what did the account last record. Never selects the password. */
+export async function getEmailAccountSyncStatus(id: string): Promise<SyncStatusRow | null> {
+  const account = await db.emailAccount.findUnique({ where: { id }, select: { syncLeaseUntil: true, lastSyncAt: true, lastSyncStatus: true, lastSyncError: true } });
+  if (!account) return null;
+  return {
+    syncing: account.syncLeaseUntil !== null && account.syncLeaseUntil.getTime() > Date.now(),
+    lastSyncAt: account.lastSyncAt,
+    lastSyncStatus: account.lastSyncStatus,
+    lastSyncError: account.lastSyncError,
+  };
+}
+
 // ─────────────────────────────── messages (triage) ───────────────────────────────
 // SECURITY/SIZE: these queries never select `rawSource` (up to 20 MB) or, for lists, `textBody`. Only `getEmailRaw` reads the original.
 
 export type EmailBandFilter = "likely-review" | "all" | "low";
-export type EmailListParams = { band: EmailBandFilter; status: EmailTriageStatus; page: number };
+export type EmailAssigneeFilter = "all" | "mine" | "unassigned";
+export type EmailListParams = { band: EmailBandFilter; status: EmailTriageStatus; assignee: EmailAssigneeFilter; page: number };
 
 export type ScoreReasonRow = { label: string; points: number };
 
@@ -94,6 +110,7 @@ export type EmailListRow = {
   triageStatus: EmailTriageStatus;
   dismissedReason: string | null;
   enquiryId: string | null;
+  assignedTo: { id: string; name: string } | null;
 };
 
 const asReasons = (value: unknown): ScoreReasonRow[] =>
@@ -105,16 +122,41 @@ function bandWhere(band: EmailBandFilter): Prisma.EmailMessageWhereInput {
   return { band: { in: ["LIKELY", "REVIEW"] } };
 }
 
-/** The triage queue, newest first, paginated server-side. Default view: likely and review bands, still waiting. */
-export async function listEmailMessages(params: EmailListParams): Promise<{ rows: EmailListRow[]; total: number }> {
-  const where: Prisma.EmailMessageWhereInput = { ...bandWhere(params.band), triageStatus: params.status };
+/** "mine" needs the current user's id; "unassigned"/"all" don't, so callers outside a request (none today) can pass it as undefined. */
+function assigneeWhere(assignee: EmailAssigneeFilter, currentUserId: string | undefined): Prisma.EmailMessageWhereInput {
+  if (assignee === "unassigned") return { assignedToId: null };
+  if (assignee === "mine") return { assignedToId: currentUserId ?? "__none__" };
+  return {};
+}
+
+/**
+ * The triage queue, newest first, paginated server-side. Default view: likely and review bands, still waiting. `assignedToId` is
+ * advisory only (src/modules/email/triage.service.ts): the "mine"/"unassigned" filters are a convenience, not a visibility rule -
+ * every row is reachable through "all" regardless of who is signed in.
+ */
+export async function listEmailMessages(params: EmailListParams, currentUserId?: string): Promise<{ rows: EmailListRow[]; total: number }> {
+  const where: Prisma.EmailMessageWhereInput = { ...bandWhere(params.band), triageStatus: params.status, ...assigneeWhere(params.assignee, currentUserId) };
   const [messages, total] = await Promise.all([
     db.emailMessage.findMany({
       where,
       orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
       skip: (params.page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
-      select: { id: true, receivedAt: true, fromName: true, fromAddress: true, subject: true, band: true, score: true, scoreReasons: true, attachments: true, triageStatus: true, dismissedReason: true, enquiryId: true },
+      select: {
+        id: true,
+        receivedAt: true,
+        fromName: true,
+        fromAddress: true,
+        subject: true,
+        band: true,
+        score: true,
+        scoreReasons: true,
+        attachments: true,
+        triageStatus: true,
+        dismissedReason: true,
+        enquiryId: true,
+        assignedTo: { select: { id: true, name: true } },
+      },
     }),
     db.emailMessage.count({ where }),
   ]);
@@ -133,6 +175,7 @@ export async function listEmailMessages(params: EmailListParams): Promise<{ rows
       triageStatus: m.triageStatus,
       dismissedReason: m.dismissedReason,
       enquiryId: m.enquiryId,
+      assignedTo: m.assignedTo,
     })),
   };
 }
@@ -163,6 +206,7 @@ export async function getEmailMessage(id: string) {
       dismissedAt: true,
       dismissedReason: true,
       dismissedBy: { select: { name: true } },
+      assignedTo: { select: { id: true, name: true } },
       enquiry: { select: { id: true, number: true } },
       account: { select: { label: true } },
       rawSource: false,
