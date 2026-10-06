@@ -1,0 +1,88 @@
+# Production deployment for Zeronix Intelligence.
+# Host: Ubuntu 24.04, path /srv/docker/zeronix. Caddy (a separate compose project) terminates TLS and reverse-proxies
+# to zeronix-app:3000 over the shared `proxy-net` network. Nothing here is published to the host: Caddy is the only
+# public entry point. See README.md ("Production deployment") for the full runbook.
+#
+# This is the PRODUCTION file. Local development still uses docker-compose.yml (an isolated Postgres on
+# 127.0.0.1:5442) and `npm run dev` - unrelated to this file and not run on the server.
+
+name: zeronix
+
+services:
+  postgres:
+    image: postgres:17
+    # Deliberately NOT "zeronix-postgres" / a volume named "zeronix_pgdata": names this generic already collide with
+    # unrelated, unlabeled leftovers on at least one machine this was developed on. Specific on purpose.
+    container_name: zeronix-bi-prod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${ZI_DB_USER:?set ZI_DB_USER in .env}
+      POSTGRES_PASSWORD: ${ZI_DB_PASSWORD:?set ZI_DB_PASSWORD in .env}
+      POSTGRES_DB: ${ZI_DB_NAME:?set ZI_DB_NAME in .env}
+      TZ: UTC
+    volumes:
+      - zeronix_bi_prod_pgdata:/var/lib/postgresql/data
+    networks:
+      - zeronix-net
+    # No `ports:` - reachable only from containers on zeronix-net, never from the host or the internet.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # One-off migration runner. NOT started by `docker compose up`: it has no restart policy and is meant to be run
+  # explicitly, once, before (re)starting zeronix-app on a new build. See README.md for the exact command.
+  migrate:
+    build:
+      context: .
+      target: migrator
+    container_name: zeronix-bi-prod-migrate
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: postgresql://${ZI_DB_USER:?set ZI_DB_USER in .env}:${ZI_DB_PASSWORD:?set ZI_DB_PASSWORD in .env}@postgres:5432/${ZI_DB_NAME:?set ZI_DB_NAME in .env}
+    networks:
+      - zeronix-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  zeronix-app:
+    build:
+      context: .
+      target: runner
+    container_name: zeronix-app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${ZI_DB_USER:?set ZI_DB_USER in .env}:${ZI_DB_PASSWORD:?set ZI_DB_PASSWORD in .env}@postgres:5432/${ZI_DB_NAME:?set ZI_DB_NAME in .env}
+      NODE_ENV: production
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Dubai}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?set APP_SECRET_KEY in .env - see .env.example}
+      DEV_ACTOR_EMAIL: ${DEV_ACTOR_EMAIL:-dev@zeronix.local}
+      MAIL_SYNC_INTERVAL_MINUTES: ${MAIL_SYNC_INTERVAL_MINUTES:-5}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-}
+    networks:
+      - proxy-net # Caddy reaches the app here, at zeronix-app:3000
+      - zeronix-net # app <-> postgres only; not reachable from Caddy or the internet
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    # No `ports:` - only Caddy (on proxy-net) can reach port 3000; it is never published on the host.
+
+networks:
+  proxy-net:
+    external: true
+  zeronix-net:
+    driver: bridge
+
+volumes:
+  zeronix_bi_prod_pgdata:
+    name: zeronix_bi_prod_pgdata

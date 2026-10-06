@@ -41,7 +41,10 @@ async function walk(dir: string, urlPrefix: string): Promise<KnowledgeNode[]> {
 /** Every markdown page as a folder tree (a README first, then folders, then files; empty folders are left out). */
 export async function listKnowledgeTree(ctx: ServiceContext): Promise<KnowledgeNode[]> {
   void ctx; // any signed-in actor may read; the context is here so a permission rule can be added without touching the pages
-  return walk(path.join(repoRoot(), KNOWLEDGE_DIR), "").catch((error: NodeJS.ErrnoException) => {
+  // The join is dynamic (repoRoot() is process.cwd()), which would otherwise make Next's build tracer sweep the whole
+  // project into the server output "just in case" (it can't tell this always resolves under ./knowledge). It really
+  // does always resolve there; the production Dockerfile copies that folder next to the standalone server explicitly.
+  return walk(path.join(/* turbopackIgnore: true */ repoRoot(), KNOWLEDGE_DIR), "").catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return [];
     throw error;
   });

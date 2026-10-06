@@ -1,0 +1,38 @@
+# Keep the build context small and never send local secrets or state into the Docker build.
+
+# dependencies (reinstalled inside the image)
+node_modules
+
+# local/dev state
+.next
+.env
+.env.*
+!.env.example
+.git
+.github
+.worktrees
+.superpowers
+*.tsbuildinfo
+next-env.d.ts
+
+# generated Prisma client (regenerated inside the image)
+src/generated
+
+# real business data: never belongs in an image
+backups
+
+# docs, plans and editor/tooling config: not needed to build or run the app
+docs
+PROJECT_PLAN.MD
+README.md
+.claude
+.vscode
+.idea
+
+# test-only state
+coverage
+
+Dockerfile
+.dockerignore
+compose.yaml
+docker-compose.yml

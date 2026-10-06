@@ -24,6 +24,18 @@
 .DS_Store
 *.pem
 
+# TLS/private key material and local compose overrides: never committed, even if someone drops one in the repo root
+# (Caddy on the VPS holds its own certificates; this project does not manage them)
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+compose.override.yaml
+compose.override.yml
+compose.*.local.yaml
+compose.*.local.yml
+
 # debug
 npm-debug.log*
 yarn-debug.log*

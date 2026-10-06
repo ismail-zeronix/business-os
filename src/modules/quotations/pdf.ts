@@ -41,7 +41,15 @@ export async function renderQuotationPdf(quotationId: string): Promise<Buffer> {
   if (!executablePath) throw new InvariantError("No Chrome or Edge was found to make the PDF. Install one, or set PDF_BROWSER_PATH in .env to its full path.");
 
   const url = `${internalBaseUrl()}/quotations/${quotationId}/print?render=${encodeURIComponent(signRenderToken(quotationId))}`;
-  const browser = await chromium.launch({ executablePath, headless: true, timeout: 30_000 });
+  // Chrome's own sandbox needs kernel privileges a container does not grant by default. Only disable it where that applies
+  // (PDF_NO_SANDBOX=1, set in the production compose file); local development keeps the sandbox on.
+  const noSandbox = process.env.PDF_NO_SANDBOX === "1";
+  const browser = await chromium.launch({
+    executablePath,
+    headless: true,
+    timeout: 30_000,
+    ...(noSandbox ? { args: ["--no-sandbox", "--disable-setuid-sandbox"] } : {}),
+  });
   try {
     const page = await browser.newPage();
     const response = await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
