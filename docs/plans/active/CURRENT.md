@@ -21,6 +21,14 @@
 6. Other categories (server, switch) and AI-proposed requirements.
 Parked, not in this scope: supplier ranking, stock-status inference, `match_feedback`. `product_variants` is deliberately not added: `Product` acts as the sellable variant.
 
+**Sales operations: ownership, invoicing & payments, UI, KPIs (2026-10-08, approved scope change, on branch `sales-ops-phase1-ownership`):** a complete admin/sales-rep operating model for Sales - Customer ownership (built earlier, committed `e6925b5`) and a matching `Invoice`/`InvoiceLine` model, followed by four phases in `docs/superpowers/specs/2026-10-08-sales-operations-design.md`. **Phase 1 (Ownership & assignment) is built**, see `docs/superpowers/plans/2026-10-08-sales-ops-phase1-ownership-assignment.md` for the task-by-task record: `Enquiry.assignedToId` reassignment is now admin-only (`reassignEnquiryOwner`, `EnquiryOwnerControl`), removed from the general STAFF-editable header form; assigning an enquiry auto-syncs its linked customer's owner only when that customer is currently unowned; it stays attribution-only (never restricts who can see or work an enquiry - procurement keeps full visibility for sourcing). The main `/enquiries` list gained the same "Assigned to me / Unassigned" filter pill the email triage view already had. Phases 2-4 (invoice edit + payments + a Payments screen, a UI pass on Quotes/Invoices/Payments, and a sales KPI dashboard) are not started.
+
+Verified: typecheck and lint clean throughout; six scratch-script cases against the project database covering every Review Focus item (non-admin refused, archived enquiry refused, auto-sync only when the customer is unowned, an enquiry with no linked customer reassigns without crashing, resubmitting the same owner is a no-op), plus the new "mine"/"unassigned" filter cross-checked against a direct database count. **Not verified in a browser** (no interactive sign-in/browser driver was available in this session) - same recorded limitation as earlier phases above.
+
+Also fixed in passing: `src/config/navigation.test.ts` asserted the pre-`e6925b5` flat nav order (stale after that commit's Procurement/Sales split and Invoices addition); updated to match.
+
+Left on the project database by this phase's own verification (real records, not fabricated, every change audited): one enquiry's `assignedToId` and its customer's `ownerId` were exercised through several reassignments during Task 2's scratch run and currently sit assigned to the admin account - review or reassign by hand if that's not where it should land.
+
 ## Steps, in order
 
 1. **Browser verification pass (no new features).** Clear the "not verified in a browser" items by hand on the project database, with `TEST` data:
