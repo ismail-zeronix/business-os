@@ -22,10 +22,10 @@ import { listQuotations } from "@/modules/quotations/queries";
 export const metadata: Metadata = { title: "Quotations" };
 
 export default async function QuotationsPage(props: PageProps<"/quotations">) {
-  await requireActor();
+  const actor = await requireActor();
   const searchParams = await props.searchParams;
   const params = parseQuotationFilters(searchParams);
-  const [{ rows, total }, customers] = await Promise.all([listQuotations(params), listCustomerOptions()]);
+  const [{ rows, total }, customers] = await Promise.all([listQuotations(params, actor), listCustomerOptions()]);
   const filtered = hasActiveQuotationFilters(params);
 
   const newQuotation = (

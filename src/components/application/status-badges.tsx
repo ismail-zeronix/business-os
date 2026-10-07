@@ -1,4 +1,4 @@
-import type { EmailBand, EnquiryPriority, EnquiryStatus, ExtractionConfidence, ItemReviewStatus, MatchBasis, QuotationStatus, RecordStatus, StockStatus, SupplierRequestStatus, VatState } from "@/generated/prisma/enums";
+import type { EmailBand, EnquiryPriority, EnquiryStatus, ExtractionConfidence, InvoiceStatus, ItemReviewStatus, MatchBasis, QuotationStatus, RecordStatus, StockStatus, SupplierRequestStatus, VatState } from "@/generated/prisma/enums";
 import type { SpecVerdict } from "@/modules/specs/verdict";
 import { SoftPill, type PillTone } from "@/components/application/soft-pill";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import {
   EMAIL_BAND_LABEL,
   ENQUIRY_PRIORITY_LABEL,
   ENQUIRY_STATUS_LABEL,
+  INVOICE_STATUS_LABEL,
   QUOTATION_STATUS_LABEL,
   RECORD_STATUS_LABEL,
   REVIEW_STATUS_LABEL,
@@ -183,6 +184,17 @@ export function QuotationStatusPill({ status }: { status: QuotationStatus }) {
   return (
     <SoftPill tone={QUOTATION_STATUS_TONE[status]} dot>
       {QUOTATION_STATUS_LABEL[status]}
+    </SoftPill>
+  );
+}
+
+/** A draft is still being worked on (amber), issued is sent/current (sky), paid is done (green), cancelled is quiet. */
+export const INVOICE_STATUS_TONE: Record<InvoiceStatus, PillTone> = { DRAFT: "amber", ISSUED: "sky", PAID: "green", CANCELLED: "neutral" };
+
+export function InvoiceStatusPill({ status }: { status: InvoiceStatus }) {
+  return (
+    <SoftPill tone={INVOICE_STATUS_TONE[status]} dot>
+      {INVOICE_STATUS_LABEL[status]}
     </SoftPill>
   );
 }

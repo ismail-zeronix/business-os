@@ -8,6 +8,7 @@ import type {
   EvidenceChannel,
   EvidenceKind,
   ExtractionConfidence,
+  InvoiceStatus,
   ItemReviewStatus,
   MatchBasis,
   PreferredChannel,
@@ -158,6 +159,13 @@ export const QUOTATION_STATUS_LABEL: Record<QuotationStatus, string> = {
   DRAFT: "Draft",
   ISSUED: "Issued",
   SUPERSEDED: "Superseded",
+};
+
+export const INVOICE_STATUS_LABEL: Record<InvoiceStatus, string> = {
+  DRAFT: "Draft",
+  ISSUED: "Issued",
+  PAID: "Paid",
+  CANCELLED: "Cancelled",
 };
 
 export const USER_ROLE_LABEL: Record<UserRole, string> = {

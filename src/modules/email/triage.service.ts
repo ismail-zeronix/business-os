@@ -3,7 +3,7 @@ import { inTransaction, type ServiceContext } from "../../core/database/tx";
 import { writeAudit } from "../audit/service";
 import { findKnownCustomerByEmail } from "../customers/queries";
 import { createEnquiry } from "../enquiries/service";
-import type { EmailDismissInput } from "./schemas";
+import type { EmailAssignInput, EmailDismissInput } from "./schemas";
 
 /**
  * Email triage. An ingested email is immutable evidence; a person decides what to do with it: create an enquiry from it, or dismiss it
@@ -68,5 +68,30 @@ export async function restoreEmail(ctx: ServiceContext, input: { id: string }) {
     await c.db.emailMessage.update({ where: { id: input.id }, data: { triageStatus: "NEW", dismissedAt: null, dismissedById: null, dismissedReason: null }, select: { id: true } });
     await writeAudit(c, { action: "email_message.restored", entityType: "EmailMessage", entityId: input.id });
     return { id: input.id };
+  });
+}
+
+/**
+ * Who is working this email. Advisory only: everyone still sees every email in the triage queue regardless of who it is assigned
+ * to (no queue, no gatekeeping) - this is just a label and a filter. Any signed-in person may assign, reassign or unassign.
+ */
+export async function assignEmailMessage(ctx: ServiceContext, input: EmailAssignInput) {
+  return inTransaction(ctx, async (c) => {
+    const email = await c.db.emailMessage.findUnique({ where: { id: input.id }, select: { id: true, assignedToId: true, assignedTo: { select: { name: true } } } });
+    if (!email) throw new NotFoundError("Email");
+
+    const assignedToId = input.assignedToId;
+    if (assignedToId === email.assignedToId) return { id: email.id };
+
+    let nextName: string | null = null;
+    if (assignedToId) {
+      const user = await c.db.user.findUnique({ where: { id: assignedToId }, select: { status: true, name: true } });
+      if (!user || user.status !== "ACTIVE") throw new ValidationError("That person is not available.", { assignedToId: "Choose an active user" });
+      nextName = user.name;
+    }
+
+    await c.db.emailMessage.update({ where: { id: email.id }, data: { assignedToId }, select: { id: true } });
+    await writeAudit(c, { action: "email_message.assigned", entityType: "EmailMessage", entityId: email.id, details: { assignee: { from: email.assignedTo?.name ?? null, to: nextName } } });
+    return { id: email.id };
   });
 }

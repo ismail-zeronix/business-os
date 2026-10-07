@@ -121,7 +121,7 @@ export default async function OverviewPage(props: PageProps<"/">) {
             {tab === "waiting" ? <WaitingList rows={await listWaitingOnSuppliers(LIST_LIMIT)} now={now} /> : null}
             {tab === "broadcasts" ? <BroadcastList rows={await listAwaitingReview(LIST_LIMIT)} now={now} /> : null}
             {tab === "prices" ? <LatestPriceList rows={await listRecentObservations(LIST_LIMIT)} now={now} searchParams={searchParams} /> : null}
-            {tab === "emails" ? <EmailList rows={(await listEmailMessages({ band: "likely-review", status: "NEW", page: 1 })).rows.slice(0, LIST_LIMIT)} now={now} /> : null}
+            {tab === "emails" ? <EmailList rows={(await listEmailMessages({ band: "likely-review", status: "NEW", assignee: "all", page: 1 })).rows.slice(0, LIST_LIMIT)} now={now} /> : null}
           </SideTabs>
         </div>
       </div>

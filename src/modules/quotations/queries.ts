@@ -1,9 +1,21 @@
 import { db } from "../../core/database/client";
 import type { Prisma } from "../../generated/prisma/client";
 import type { QuotationStatus } from "../../generated/prisma/enums";
+import type { OwnerActor } from "../customers/queries";
 import { escapeLike } from "../../lib/like";
 import { PAGE_SIZE } from "../../lib/search-params";
 import { computeTotals } from "./pricing";
+
+/**
+ * Sales-module visibility, following the linked customer's owner (customers/queries.ts): visible if the customer is
+ * shared/unowned, or owned by this actor, OR this actor made or issued the quotation themselves (so creating a quotation
+ * for a customer you don't own - e.g. from an enquiry assigned to you - never locks you out of your own work). ADMIN
+ * sees everything. A manual quotation with no customer at all is visible only to its creator/issuer (+ ADMIN).
+ */
+function visibilityWhere(actor: OwnerActor): Prisma.QuotationWhereInput {
+  if (actor.role === "ADMIN") return {};
+  return { OR: [{ customer: { ownerId: null } }, { customer: { ownerId: actor.id } }, { createdById: actor.id }, { issuedById: actor.id }] };
+}
 
 export type QuotationListParams = { q?: string; status?: QuotationStatus; enquiryId?: string; page: number };
 
@@ -25,7 +37,7 @@ export type QuotationListRow = {
   incompleteLines: number;
 };
 
-function listWhere(params: QuotationListParams): Prisma.QuotationWhereInput {
+function listWhere(params: QuotationListParams, actor: OwnerActor): Prisma.QuotationWhereInput {
   const q = params.q?.trim();
   const contains = (value: string) => ({ contains: escapeLike(value), mode: "insensitive" as const });
   // QUO-20260921-0001 (or 20260921-0001) finds one quotation; a bare counter such as 0001 or 1 finds that counter on any day.
@@ -34,6 +46,7 @@ function listWhere(params: QuotationListParams): Prisma.QuotationWhereInput {
   const enquiryNumber = q ? /^ENQ-?0*(\d+)$/i.exec(q)?.[1] : undefined;
   return {
     AND: [
+      visibilityWhere(actor),
       // Superseded revisions are hidden until asked for, so a list shows what is current.
       params.status ? { status: params.status } : { status: { not: "SUPERSEDED" } },
       params.enquiryId ? { enquiryId: params.enquiryId } : {},
@@ -54,8 +67,8 @@ function listWhere(params: QuotationListParams): Prisma.QuotationWhereInput {
 }
 
 /** Server-side filtered, paginated list, most recently changed first. */
-export async function listQuotations(params: QuotationListParams): Promise<{ rows: QuotationListRow[]; total: number }> {
-  const where = listWhere(params);
+export async function listQuotations(params: QuotationListParams, actor: OwnerActor): Promise<{ rows: QuotationListRow[]; total: number }> {
+  const where = listWhere(params, actor);
   const [quotations, total] = await Promise.all([
     db.quotation.findMany({
       where,
@@ -110,14 +123,15 @@ export async function listQuotationsForEnquiry(enquiryId: string) {
 }
 
 /** The internal view of a quotation: everything, including each line's cost and where it came from. Never used for the customer's copy. */
-export async function getQuotation(id: string) {
-  const quotation = await db.quotation.findUnique({
-    where: { id },
+export async function getQuotation(id: string, actor: OwnerActor) {
+  const quotation = await db.quotation.findFirst({
+    where: { AND: [{ id }, visibilityWhere(actor)] },
     include: {
       enquiry: { select: { id: true, number: true, archivedAt: true, subject: true } },
       customer: { select: { id: true, name: true } },
       createdBy: { select: { name: true } },
       issuedBy: { select: { name: true } },
+      invoice: { select: { id: true, invoiceDate: true, invoiceSeq: true, status: true } },
       lines: {
         orderBy: { position: "asc" },
         include: {

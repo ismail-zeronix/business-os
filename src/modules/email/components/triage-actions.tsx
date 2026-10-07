@@ -3,12 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useActionState, useState } from "react";
 import { FormMessage } from "@/components/forms/form-message";
+import { SelectField } from "@/components/forms/select-field";
+import type { SelectOption } from "@/components/forms/multi-select";
 import { SubmitButton } from "@/components/forms/submit-button";
 import { useActionFeedback } from "@/components/forms/use-action-feedback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { createEnquiryFromEmailAction, dismissEmailAction, restoreEmailAction } from "../actions";
+import { assignEmailMessageAction, createEnquiryFromEmailAction, dismissEmailAction, restoreEmailAction } from "../actions";
 
 /** Creates an enquiry from the email and opens it. A person's decision: nothing is ever created automatically. */
 export function CreateEnquiryFromEmailButton({ emailId }: { emailId: string }) {
@@ -66,5 +68,49 @@ export function RestoreEmailButton({ emailId }: { emailId: string }) {
       </SubmitButton>
       <FormMessage state={state} />
     </form>
+  );
+}
+
+/**
+ * Who is working this email. Advisory only: it never hides the email from anyone, it just labels it and feeds the
+ * Mine/Unassigned/All filter. "Assign to me" is a one-click shortcut; the popover covers reassigning or clearing it.
+ */
+export function AssignEmailControl({ emailId, assignedToId, assignedToName, currentUserId, users }: { emailId: string; assignedToId: string | null; assignedToName: string | null; currentUserId: string; users: SelectOption[] }) {
+  const [open, setOpen] = useState(false);
+  const [state, formAction] = useActionState(assignEmailMessageAction, null);
+  useActionFeedback(state, () => setOpen(false));
+
+  return (
+    <div className="flex items-center gap-2">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm">
+            {assignedToName ? `Assigned: ${assignedToName}` : "Unassigned"}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-64 space-y-3">
+          <p className="text-xs text-muted-foreground">A label for who is working this, visible to everyone. It does not hide the email from anyone else.</p>
+          <form action={formAction} className="space-y-2">
+            <input type="hidden" name="id" value={emailId} />
+            <SelectField name="assignedToId" noneLabel="Unassigned" defaultValue={assignedToId} options={users} />
+            <FormMessage state={state} />
+            <div className="flex justify-end">
+              <SubmitButton size="sm" pendingLabel="Saving...">
+                Save
+              </SubmitButton>
+            </div>
+          </form>
+        </PopoverContent>
+      </Popover>
+      {assignedToId !== currentUserId ? (
+        <form action={formAction}>
+          <input type="hidden" name="id" value={emailId} />
+          <input type="hidden" name="assignedToId" value={currentUserId} />
+          <SubmitButton size="sm" variant="ghost" pendingLabel="Assigning...">
+            Assign to me
+          </SubmitButton>
+        </form>
+      ) : null}
+    </div>
   );
 }

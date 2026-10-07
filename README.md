@@ -30,13 +30,14 @@ npm run dev                 # http://127.0.0.1:3000
 | `npm run mail:sync` | Sync every active email account once. `-- --watch` repeats every `MAIL_SYNC_INTERVAL_MINUTES` (default 5). See "Email". |
 
 ## Email
-Customer enquiries can arrive by email. Add the mailbox in **Settings > Email accounts** (IMAP; Hostinger's server, port 993 and SSL/TLS are pre-filled and editable), press **Test connection**, then sync from **Enquiries > Email** (`Sync now`) or run `npm run mail:sync` (add `-- --watch` to keep syncing).
+Customer enquiries can arrive by email. Add the mailbox in **Settings > Email accounts** (IMAP; Hostinger's server, port 993 and SSL/TLS are pre-filled and editable), press **Test connection**, then sync from **Enquiries > Email** (`Sync now`), run `npm run mail:sync` (add `-- --watch` to keep syncing), or - in production - let the `mail-cron` compose service trigger it automatically.
 
 - **Setup.** Generate a key once and put it in `.env` as `APP_SECRET_KEY=...`:
   `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
   It encrypts the stored mailbox password (AES-256-GCM). **Keep it safe: if it is lost or changed, re-enter the password.** A `db:backup` dump does not contain it.
 - **Read-only.** The mailbox is opened read-only: mail is never marked as read, moved or deleted. Only messages on or after the account's *sync from* date are read, at most 200 per run, oldest first.
-- **Nothing is automatic.** Each email is stored as immutable evidence and scored. A person decides whether to create an enquiry or dismiss it (Enquiries > Email).
+- **Automatic in production.** The `mail-cron` service (`compose.yaml`) calls `POST /api/cron/mail-sync` every `MAIL_SYNC_INTERVAL_MINUTES`, entirely inside the internal Docker network, authorized by `MAIL_CRON_SECRET` (generate it the same way as `APP_SECRET_KEY`; the route refuses every request until it is set). Not used in local dev - there, use `Sync now` or `npm run mail:sync`.
+- **Nothing is automatic about becoming an enquiry.** Each email is stored as immutable evidence and scored. A person decides whether to create an enquiry or dismiss it (Enquiries > Email); only the fetch itself is automatic in production.
 - The password is write-only in the UI and never appears in logs, errors or the audit trail. Real customer email is stored in the database and therefore in backups. See `docs/decisions/0005-email-account-secrets.md`.
 
 ## Backups
@@ -68,7 +69,8 @@ git clone <this repo> /srv/docker/zeronix   # or rsync a release tarball; see "n
 cd /srv/docker/zeronix
 cp .env.example .env
 # edit .env: ZI_DB_PASSWORD (generate, do not reuse the dev password), APP_SECRET_KEY (generate, back it up outside
-# the database), SETUP_TOKEN (recommended - see below). See the "Production (Docker Compose)" section of .env.example.
+# the database), MAIL_CRON_SECRET (generate the same way - required, the app container will not start without it),
+# SETUP_TOKEN (recommended - see below). See the "Production (Docker Compose)" section of .env.example.
 docker network inspect proxy-net >/dev/null 2>&1 || docker network create proxy-net   # only if Caddy has not already made it
 ```
 
@@ -77,8 +79,9 @@ docker network inspect proxy-net >/dev/null 2>&1 || docker network create proxy-
 docker compose build                        # builds zeronix-app (target: runner) and the migrate image (target: migrator)
 docker compose up -d postgres                # start the database first and wait for it to be healthy
 docker compose run --rm migrate              # apply migrations (safe: `prisma migrate deploy`, additive only, never resets)
-docker compose up -d zeronix-app             # start the app (or: docker compose up -d, which starts postgres + zeronix-app;
-                                              #  `migrate` has profile "tools" so it is never started by `up` on its own)
+docker compose up -d zeronix-app mail-cron   # start the app and its mail-sync scheduler (or: docker compose up -d, which
+                                              #  starts postgres + zeronix-app + mail-cron; `migrate` has profile "tools"
+                                              #  so it is never started by `up` on its own)
 ```
 
 **Every later deploy** (new image, same database):
@@ -86,7 +89,7 @@ docker compose up -d zeronix-app             # start the app (or: docker compose
 git pull   # or re-sync the release
 docker compose build zeronix-app migrate
 docker compose run --rm migrate
-docker compose up -d zeronix-app
+docker compose up -d zeronix-app mail-cron
 ```
 
 **First admin:** open `https://<your domain>/setup` right after the first deploy and create the admin account - it is open to whoever reaches it first until that happens. Set `SETUP_TOKEN` in `.env` beforehand to require a code there.

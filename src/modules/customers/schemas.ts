@@ -27,6 +27,8 @@ export const customerProfileSchema = z.object({
 export const customerCreateSchema = customerProfileSchema;
 export const customerUpdateSchema = customerProfileSchema.extend({ id: z.uuid() });
 export const customerStatusSchema = z.object({ id: z.uuid(), status: z.enum(RecordStatus) });
+/** Empty string (the "Unassigned / shared" choice in the picker) means make the customer shared again. */
+export const customerOwnerSchema = z.object({ id: z.uuid(), ownerId: z.preprocess((value) => (value === "" ? null : value), z.uuid().nullable()) });
 
 export const customerContactBaseSchema = z.object({
   name: requiredText("Contact name", 200),
@@ -53,6 +55,7 @@ export const customerCallSchema = z.object({
 export type CustomerCreateInput = z.output<typeof customerCreateSchema>;
 export type CustomerUpdateInput = z.output<typeof customerUpdateSchema>;
 export type CustomerStatusInput = z.output<typeof customerStatusSchema>;
+export type CustomerOwnerInput = z.output<typeof customerOwnerSchema>;
 export type CustomerContactCreateInput = z.output<typeof customerContactCreateSchema>;
 export type CustomerContactUpdateInput = z.output<typeof customerContactUpdateSchema>;
 export type CustomerContactStatusInput = z.output<typeof customerContactStatusSchema>;

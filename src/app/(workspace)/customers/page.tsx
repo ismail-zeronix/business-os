@@ -21,10 +21,10 @@ import { listCustomers } from "@/modules/customers/queries";
 export const metadata: Metadata = { title: "Customers" };
 
 export default async function CustomersPage(props: PageProps<"/customers">) {
-  await requireActor();
+  const actor = await requireActor();
   const searchParams = await props.searchParams;
   const params = parseCustomerFilters(searchParams);
-  const { rows, total } = await listCustomers(params);
+  const { rows, total } = await listCustomers(params, actor);
   const filtered = hasActiveCustomerFilters(params);
 
   const addCustomer = (

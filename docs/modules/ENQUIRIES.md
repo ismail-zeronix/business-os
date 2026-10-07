@@ -26,7 +26,7 @@ Pasted request                         IMAP mailbox (read-only)
 - **Customers** (`src/modules/customers`): companies and their contacts, modelled on suppliers. A contact's email is how an incoming email is recognised as a known customer.
 - **Enquiries** (`src/modules/enquiries`): `service.ts` (create, header, status, notes, archive, suggestions, save-requester-as-customer), `item.service.ts` (review workflow), `parsing/` (pure requirement parser), `intelligence.ts` (read-only supplier intelligence), `queries.ts` (inbox and workspace reads).
 - **Email** (`src/modules/email`): `account.service.ts` (mailboxes and encrypted passwords), `imap.ts` (the only code that talks to a mail server), `sync.service.ts`, `mime.ts` and `text.ts` (normalisation), `scoring/` (config and pure scorer), `triage.service.ts`.
-- `scripts/mail-sync.ts` (`npm run mail:sync`, `-- --watch`): optional automatic sync. No queue.
+- `scripts/mail-sync.ts` (`npm run mail:sync`, `-- --watch`): manual/local sync. In production, `src/app/api/cron/mail-sync/route.ts` is triggered on an interval by the internal `mail-cron` compose service (`MAIL_CRON_SECRET`-protected, never reachable from outside the server), calling the same `syncAllActiveAccounts`. Both paths are read-only, bounded (200 messages/run) and cursor-based (`EmailAccount.uidValidity`/`lastUid`) with a sync lease preventing overlap. No queue.
 
 ## Rules this module follows
 - **The request is immutable evidence.** A pasted request is an `EvidenceSource` (`CUSTOMER_ENQUIRY`); an email's clean text is one (`CUSTOMER_EMAIL`) and its original MIME is stored immutably and downloadable as `.eml`.

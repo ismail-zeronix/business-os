@@ -166,12 +166,17 @@ model User {
   attributesRetracted        ProductAttribute[]    @relation("ProductAttributeRetractedBy")
   emailAccountsCreated       EmailAccount[]        @relation("EmailAccountCreatedBy")
   emailMessagesDismissed     EmailMessage[]        @relation("EmailDismissedBy")
+  emailMessagesAssigned      EmailMessage[]        @relation("EmailMessageAssignedTo")
   supplierRequestsCreated    SupplierRequest[]     @relation("SupplierRequestCreatedBy")
   supplierRequestsSent       SupplierRequest[]     @relation("SupplierRequestSentBy")
   decisionsMade              ProcurementDecision[] @relation("DecisionDecidedBy")
   decisionsRetracted         ProcurementDecision[] @relation("DecisionRetractedBy")
   quotationsCreated          Quotation[]           @relation("QuotationCreatedBy")
   quotationsIssued           Quotation[]           @relation("QuotationIssuedBy")
+  invoicesCreated            Invoice[]             @relation("InvoiceCreatedBy")
+  invoicesIssued             Invoice[]             @relation("InvoiceIssuedBy")
+  customersCreated           Customer[]            @relation("CustomerCreatedBy")
+  customersOwned             Customer[]            @relation("CustomerOwner")
   smtpAccountsCreated        SmtpAccount[]         @relation("SmtpAccountCreatedBy")
   sentEmails                 SentEmail[]           @relation("SentEmailSentBy")
   aiProviderSettingsCreated  AiProviderSetting[]   @relation("AiProviderSettingCreatedBy")
@@ -744,6 +749,9 @@ enum EmailSyncStatus {
   ERROR
 }
 
+/// Visibility (src/modules/customers/queries.ts): a Sales-module browse/detail read is scoped to `ownerId` (NULL = unowned,
+/// shared, visible to everyone - the state of every customer that existed before ownership was introduced); a
+/// procurement-side reference (the enquiry customer picker, email-sender matching) is never scoped, by design.
 model Customer {
   id             String       @id @default(uuid(7)) @db.Uuid
   name           String
@@ -758,15 +766,23 @@ model Customer {
   email          String?
   notes          String?
   status         RecordStatus @default(ACTIVE)
+  /// NULL = no creator on record (every customer that existed before ownership was introduced - never fabricated).
+  createdById    String?      @map("created_by_id") @db.Uuid
+  /// NULL = unowned, shared. Defaults to the creator going forward; reassignable by an ADMIN only.
+  ownerId        String?      @map("owner_id") @db.Uuid
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  createdBy  User?             @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  owner      User?             @relation("CustomerOwner", fields: [ownerId], references: [id], onDelete: Restrict)
   contacts   CustomerContact[]
   enquiries  Enquiry[]
   quotations Quotation[]
+  invoices   Invoice[]
   sentEmails SentEmail[]
 
   @@index([status])
+  @@index([ownerId])
   @@map("customers")
 }
 
@@ -1010,6 +1026,8 @@ model EmailMessage {
   dismissedById   String?           @map("dismissed_by_id") @db.Uuid
   dismissedReason String?           @map("dismissed_reason")
   enquiryId       String?           @unique @map("enquiry_id") @db.Uuid
+  /// Advisory only: who is working this email. Does not restrict who can see or triage it (no queue, no gatekeeping).
+  assignedToId    String?           @map("assigned_to_id") @db.Uuid
 
   evidenceSourceId String   @unique @map("evidence_source_id") @db.Uuid
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -1018,10 +1036,12 @@ model EmailMessage {
   evidenceSource EvidenceSource @relation(fields: [evidenceSourceId], references: [id], onDelete: Restrict)
   enquiry        Enquiry?       @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
   dismissedBy    User?          @relation("EmailDismissedBy", fields: [dismissedById], references: [id], onDelete: Restrict)
+  assignedTo     User?          @relation("EmailMessageAssignedTo", fields: [assignedToId], references: [id], onDelete: Restrict)
 
   @@unique([accountId, folder, uidValidity, uid])
   @@index([band, triageStatus, receivedAt(sort: Desc)])
   @@index([fromAddress])
+  @@index([assignedToId])
   @@map("email_messages")
 }
 
@@ -1145,6 +1165,7 @@ model Quotation {
   createdBy  User            @relation("QuotationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   lines      QuotationLine[]
   sentEmails SentEmail[]
+  invoice    Invoice?
 
   @@unique([number, revision])
   @@unique([quoteDate, quoteSeq, revision])
@@ -1181,6 +1202,77 @@ model QuotationLine {
   @@index([enquiryItemId])
   @@index([costPriceObservationId])
   @@map("quotation_lines")
+}
+
+// ─────────────────────────────── Invoices ───────────────────────────────
+// Milestone: docs/plans/active/CURRENT.md (Sales module). An invoice always comes from exactly one ISSUED quotation (one
+// invoice per quotation); a fully manual invoice with no quotation is out of scope. Lines are a frozen copy made at
+// creation, never independently re-priced - the quotation already did the pricing and costing work.
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  CANCELLED
+}
+
+/// Visibility follows the linked Customer's owner (NULL owner = shared), plus the invoice's own creator/issuer, plus ADMIN -
+/// the same rule as Quotation (src/modules/invoices/queries.ts). A NULL customerId (should not happen in practice, since the
+/// source quotation almost always has one) is visible only to its creator/issuer and ADMIN.
+model Invoice {
+  id           String        @id @default(uuid(7)) @db.Uuid
+  /// Internal identity. The reference people see is built from invoiceDate and invoiceSeq (INV-YYYYMMDD-0001).
+  number       Int           @default(autoincrement())
+  invoiceDate  DateTime      @map("invoice_date") @db.Date
+  invoiceSeq   Int           @map("invoice_seq")
+  quotationId  String        @unique @map("quotation_id") @db.Uuid
+  customerId   String?       @map("customer_id") @db.Uuid
+  /// Text snapshots, copied from the quotation at creation (same idea as Quotation.customerName).
+  customerName String?       @map("customer_name")
+  contactName  String?       @map("contact_name")
+  status       InvoiceStatus @default(DRAFT)
+  currencyCode String        @map("currency_code") @db.Char(3)
+  vatPercent   Decimal       @map("vat_percent") @db.Decimal(5, 2)
+  dueDate      DateTime?     @map("due_date") @db.Date
+  /// Shown to the customer.
+  notes            String?
+  issuedAt         DateTime? @map("issued_at") @db.Timestamptz(3)
+  issuedById       String?   @map("issued_by_id") @db.Uuid
+  paidAt           DateTime? @map("paid_at") @db.Timestamptz(3)
+  cancelledAt      DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  cancelledReason  String?   @map("cancelled_reason")
+  createdById      String    @map("created_by_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  quotation Quotation     @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  customer  Customer?     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  issuedBy  User?         @relation("InvoiceIssuedBy", fields: [issuedById], references: [id], onDelete: Restrict)
+  createdBy User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  lines     InvoiceLine[]
+
+  @@unique([invoiceDate, invoiceSeq])
+  @@index([customerId])
+  @@index([status, updatedAt(sort: Desc)])
+  @@map("invoices")
+}
+
+/// A frozen copy of the source QuotationLine, made once at creation. No cost/markup columns: an invoice is customer-facing
+/// only, same wall as Quotation's print view - the cost/supplier side never reaches it.
+model InvoiceLine {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  invoiceId   String   @map("invoice_id") @db.Uuid
+  position    Int
+  description String
+  partNumber  String?  @map("part_number")
+  quantity    Int?
+  unitPrice   Decimal? @map("unit_price") @db.Decimal(14, 2)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([invoiceId, position])
+  @@map("invoice_lines")
 }
 
 // ─────────────────────────────── Outgoing email ───────────────────────────────

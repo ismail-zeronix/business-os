@@ -21,6 +21,7 @@ export const AUDIT_ENTITY_TYPES = [
   "SupplierRequest",
   "ProcurementDecision",
   "Quotation",
+  "Invoice",
   "User",
   "EmailAccount",
   "SmtpAccount",
@@ -72,6 +73,7 @@ export type AuditAction =
   | "customer.created"
   | "customer.updated"
   | "customer.status_changed"
+  | "customer.owner_changed"
   | "customer_contact.created"
   | "customer_contact.updated"
   | "customer_contact.archived"
@@ -108,6 +110,10 @@ export type AuditAction =
   | "quotation.revised"
   | "quotation.emailed"
   | "quotation.email_failed"
+  | "invoice.created"
+  | "invoice.issued"
+  | "invoice.paid"
+  | "invoice.cancelled"
   | "smtp_account.created"
   | "smtp_account.updated"
   | "smtp_account.password_changed"
@@ -128,6 +134,7 @@ export type AuditAction =
   | "email_message.enquiry_created"
   | "email_message.dismissed"
   | "email_message.restored"
+  | "email_message.assigned"
   | "ai_provider.created"
   | "ai_provider.updated"
   | "ai_provider.key_changed"

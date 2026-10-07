@@ -1,10 +1,11 @@
-import { ConflictError, NotFoundError, uniqueViolation } from "../../core/errors";
+import { ConflictError, NotFoundError, ValidationError, uniqueViolation } from "../../core/errors";
 import { inTransaction, type ServiceContext } from "../../core/database/tx";
+import { assertAdmin } from "../../core/permissions/roles";
 import { diffFields, hasChanges } from "../../lib/diff";
 import { CALL_DIRECTION_LABEL, CALL_OUTCOME_LABEL } from "../../lib/labels";
 import { normalizeName } from "../../lib/normalize";
 import { writeAudit } from "../audit/service";
-import type { CustomerCallInput, CustomerCreateInput, CustomerNoteInput, CustomerStatusInput, CustomerUpdateInput } from "./schemas";
+import type { CustomerCallInput, CustomerCreateInput, CustomerNoteInput, CustomerOwnerInput, CustomerStatusInput, CustomerUpdateInput } from "./schemas";
 
 /** Fields whose changes are recorded in the audit log. */
 const PROFILE_FIELDS = ["name", "legalName", "trn", "country", "emirate", "website", "phone", "email", "notes"] as const;
@@ -24,7 +25,8 @@ export async function createCustomer(ctx: ServiceContext, input: CustomerCreateI
     return await inTransaction(ctx, async (c) => {
       const normalizedName = normalizeName(input.name);
       await assertNameFree(c, normalizedName);
-      const customer = await c.db.customer.create({ data: { ...input, normalizedName } });
+      // Ownership defaults to the creator going forward; a customer created before this existed stays NULL/shared (never fabricated).
+      const customer = await c.db.customer.create({ data: { ...input, normalizedName, createdById: c.actor.id, ownerId: c.actor.id } });
       await writeAudit(c, { action: "customer.created", entityType: "Customer", entityId: customer.id, details: { name: customer.name } });
       return customer;
     });
@@ -69,6 +71,31 @@ export async function setCustomerStatus(ctx: ServiceContext, input: CustomerStat
       entityId: input.id,
       details: { status: { from: existing.status, to: input.status } },
     });
+    return updated;
+  });
+}
+
+/**
+ * Who this customer belongs to, for Sales-module visibility (src/modules/customers/queries.ts: NULL = shared, visible to
+ * everyone). ADMIN only - the same restriction as reassigning an Enquiry's owner is NOT admin-only, but customer ownership
+ * is the actual access-control boundary here, so only ADMIN may move it.
+ */
+export async function reassignCustomerOwner(ctx: ServiceContext, input: CustomerOwnerInput) {
+  assertAdmin(ctx);
+  return inTransaction(ctx, async (c) => {
+    const existing = await c.db.customer.findUnique({ where: { id: input.id }, select: { id: true, ownerId: true, owner: { select: { name: true } } } });
+    if (!existing) throw new NotFoundError("Customer");
+    if (input.ownerId === existing.ownerId) return existing;
+
+    let nextName: string | null = null;
+    if (input.ownerId) {
+      const user = await c.db.user.findUnique({ where: { id: input.ownerId }, select: { status: true, name: true } });
+      if (!user || user.status !== "ACTIVE") throw new ValidationError("That owner is not available.", { ownerId: "Choose an active user" });
+      nextName = user.name;
+    }
+
+    const updated = await c.db.customer.update({ where: { id: input.id }, data: { ownerId: input.ownerId } });
+    await writeAudit(c, { action: "customer.owner_changed", entityType: "Customer", entityId: input.id, details: { owner: { from: existing.owner?.name ?? null, to: nextName } } });
     return updated;
   });
 }

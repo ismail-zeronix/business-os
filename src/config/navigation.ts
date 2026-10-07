@@ -1,4 +1,4 @@
-import { Building2, FileText, Inbox, LayoutDashboard, Library, Package, RadioTower, ScrollText, Search, Settings, Users, type LucideIcon } from "lucide-react";
+import { Building2, FileText, Inbox, LayoutDashboard, Library, Package, Receipt, RadioTower, ScrollText, Search, Settings, Users, type LucideIcon } from "lucide-react";
 import { SETTINGS_NAVIGATION } from "./settings-navigation";
 
 /** `adminOnly`: shown only to admins (the screen behind it also refuses everyone else). */
@@ -12,20 +12,21 @@ export type NavGroup = { label?: string; items: NavItem[] };
 export const NAVIGATION: NavGroup[] = [
   { items: [{ label: "Overview", href: "/", icon: LayoutDashboard }] },
   {
-    label: "Enquiries",
-    items: [
-      { label: "Enquiries", href: "/enquiries", icon: Inbox },
-      { label: "Customers", href: "/customers", icon: Users },
-      { label: "Quotations", href: "/quotations", icon: FileText },
-    ],
-  },
-  {
     label: "Procurement",
     items: [
+      { label: "Enquiries", href: "/enquiries", icon: Inbox },
       { label: "Search", href: "/search", icon: Search },
       { label: "Suppliers", href: "/suppliers", icon: Building2 },
       { label: "Broadcasts", href: "/broadcasts", icon: RadioTower },
       { label: "Products", href: "/products", icon: Package },
+    ],
+  },
+  {
+    label: "Sales",
+    items: [
+      { label: "Customers", href: "/customers", icon: Users },
+      { label: "Quotations", href: "/quotations", icon: FileText },
+      { label: "Invoices", href: "/invoices", icon: Receipt },
     ],
   },
   { label: "Company", items: [{ label: "Knowledge", href: "/knowledge", icon: Library }] },

@@ -26,6 +26,7 @@ export function EmailTriageTable({ rows, hrefFor, bare = false }: { rows: EmailL
           <TableHead className="h-10 w-[22%] bg-transparent px-4">Why</TableHead>
           <TableHead className="h-10 w-10 bg-transparent px-2" aria-label="Attachments" />
           <TableHead className="h-10 w-[150px] min-w-[150px] bg-transparent px-4">State</TableHead>
+          <TableHead className="h-10 w-[130px] min-w-[130px] bg-transparent px-4">Assigned</TableHead>
           <TableHead className="h-10 w-[110px] min-w-[110px] bg-transparent px-4 text-right">Received</TableHead>
         </TableRow>
       </TableHeader>
@@ -81,6 +82,9 @@ export function EmailTriageTable({ rows, hrefFor, bare = false }: { rows: EmailL
                     {EMAIL_TRIAGE_LABEL[row.triageStatus]}
                   </SoftPill>
                 )}
+              </TableCell>
+              <TableCell className="px-4 py-2">
+                {row.assignedTo ? <span className="truncate text-xs">{row.assignedTo.name}</span> : <span className="text-xs text-muted-foreground">Unassigned</span>}
               </TableCell>
               <TableCell className="num px-4 py-2 text-right text-xs whitespace-nowrap text-muted-foreground" title={formatDateTime(row.receivedAt)}>
                 {formatRelativeAge(row.receivedAt, now)}

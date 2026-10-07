@@ -11,9 +11,9 @@ import { decryptSecret } from "@/core/security/secret-box";
 import { createEmailAccount, setEmailAccountStatus, updateEmailAccount } from "./account.service";
 import { testImapConnection } from "./imap";
 import { getEmailAccountForSync, getEmailAccountSyncStatus, type SyncStatusRow } from "./queries";
-import { emailAccountCreateSchema, emailAccountStatusSchema, emailAccountTestSchema, emailAccountUpdateSchema, emailDismissSchema, emailIdSchema, emailSyncSchema } from "./schemas";
+import { emailAccountCreateSchema, emailAccountStatusSchema, emailAccountTestSchema, emailAccountUpdateSchema, emailAssignSchema, emailDismissSchema, emailIdSchema, emailSyncSchema } from "./schemas";
 import { claimSync, runClaimedSync } from "./sync.service";
-import { createEnquiryFromEmail, dismissEmail, restoreEmail } from "./triage.service";
+import { assignEmailMessage, createEnquiryFromEmail, dismissEmail, restoreEmail } from "./triage.service";
 
 /**
  * Thin server actions for mailbox accounts. SECURITY: `runAction` echoes the submitted values back to the browser when a form fails,
@@ -162,5 +162,17 @@ export async function restoreEmailAction(_prev: IdResult | null, formData: FormD
       return result;
     },
     { successMessage: "Email restored to the queue", formData },
+  );
+}
+
+/** Advisory only: assigning an email never hides it from anyone else. Empty "assignedToId" unassigns. */
+export async function assignEmailMessageAction(_prev: IdResult | null, formData: FormData): Promise<IdResult> {
+  return runAction(
+    async () => {
+      const result = await assignEmailMessage(await getServiceContext(), emailAssignSchema.parse(formDataToObject(formData)));
+      revalidatePath("/enquiries");
+      return result;
+    },
+    { successMessage: "Assignment updated", formData },
   );
 }

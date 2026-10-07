@@ -1,5 +1,5 @@
-import { requireActor } from "@/core/permissions/actor";
-import { Download, Mail, Pencil, Plus, Printer } from "lucide-react";
+import { getCurrentActor, requireActor } from "@/core/permissions/actor";
+import { Download, FileText, Mail, Pencil, Plus, Printer } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -23,6 +23,8 @@ import { listBrandOptions } from "@/modules/products/master-data.queries";
 import { listContactOptions, listSupplierOptions } from "@/modules/suppliers/queries";
 import { enquiryReference } from "@/modules/enquiries/shared";
 import { EvidenceDrawer } from "@/modules/evidence/components/evidence-drawer";
+import { ConvertToInvoiceButton } from "@/modules/invoices/components/invoice-actions";
+import { invoiceReference } from "@/modules/invoices/shared";
 import { AddLineTabs } from "@/modules/quotations/components/add-line-tabs";
 import { QuotationDetailsForm } from "@/modules/quotations/components/details-form";
 import { LinesTable } from "@/modules/quotations/components/lines-table";
@@ -39,7 +41,8 @@ import { dateOnly, quotationLabel } from "@/modules/quotations/shared";
 
 export async function generateMetadata(props: PageProps<"/quotations/[id]">): Promise<Metadata> {
   const { id } = await props.params;
-  const quotation = z.uuid().safeParse(id).success ? await getQuotation(id) : null;
+  const actor = await getCurrentActor();
+  const quotation = z.uuid().safeParse(id).success ? await getQuotation(id, actor) : null;
   return { title: quotation ? `${quotationLabel(quotation)} · Quotation` : "Quotation" };
 }
 
@@ -49,7 +52,7 @@ export default async function QuotationPage(props: PageProps<"/quotations/[id]">
   const searchParams = await props.searchParams;
   if (!z.uuid().safeParse(id).success) notFound();
 
-  const quotation = await getQuotation(id);
+  const quotation = await getQuotation(id, actor);
   if (!quotation) notFound();
 
   const basePath = `/quotations/${id}`;
@@ -207,6 +210,17 @@ export default async function QuotationPage(props: PageProps<"/quotations/[id]">
             {emailButton}
             {draft && canEdit ? <IssueQuotationButton id={quotation.id} /> : null}
             {quotation.status === "ISSUED" && !archived ? <ReviseQuotationButton id={quotation.id} /> : null}
+            {quotation.status === "ISSUED" ? (
+              quotation.invoice ? (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/invoices/${quotation.invoice.id}`}>
+                    <FileText aria-hidden /> Open {invoiceReference(quotation.invoice)}
+                  </Link>
+                </Button>
+              ) : (
+                <ConvertToInvoiceButton quotationId={quotation.id} />
+              )
+            ) : null}
           </>
         }
       />

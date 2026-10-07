@@ -1,4 +1,4 @@
-import { requireActor } from "@/core/permissions/actor";
+import { getCurrentActor, requireActor } from "@/core/permissions/actor";
 import { Globe, Mail, MapPin, Pencil, Phone, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -24,16 +24,18 @@ import { setCustomerStatusAction } from "@/modules/customers/actions";
 import { CustomerActivityComposer } from "@/modules/customers/components/activity-composer";
 import { CustomerContactsPanel } from "@/modules/customers/components/contacts-panel";
 import { CustomerForm } from "@/modules/customers/components/customer-form";
+import { CustomerOwnerControl } from "@/modules/customers/components/owner-control";
 import { countCustomerContacts, getCustomer, listCustomerContacts } from "@/modules/customers/queries";
 import { EnquiriesTable, NoEnquiries } from "@/modules/enquiries/components/enquiries-table";
-import { listEnquiries } from "@/modules/enquiries/queries";
+import { listEnquiries, listUserOptions } from "@/modules/enquiries/queries";
 
 const TABS = ["overview", "contacts", "enquiries", "activity"] as const;
 type Tab = (typeof TABS)[number];
 
 export async function generateMetadata(props: PageProps<"/customers/[id]">): Promise<Metadata> {
   const { id } = await props.params;
-  const customer = z.uuid().safeParse(id).success ? await getCustomer(id) : null;
+  const actor = await getCurrentActor();
+  const customer = z.uuid().safeParse(id).success ? await getCustomer(id, actor) : null;
   return { title: customer?.name ?? "Customer" };
 }
 
@@ -75,12 +77,12 @@ async function CustomerEnquiries({ customerId, archived, page, searchParams }: {
 }
 
 export default async function CustomerDetailPage(props: PageProps<"/customers/[id]">) {
-  await requireActor();
+  const actor = await requireActor();
   const { id } = await props.params;
   const searchParams = await props.searchParams;
   if (!z.uuid().safeParse(id).success) notFound();
 
-  const customer = await getCustomer(id);
+  const customer = await getCustomer(id, actor);
   if (!customer) notFound();
 
   const requested = firstParam(searchParams, "tab");
@@ -105,6 +107,7 @@ export default async function CustomerDetailPage(props: PageProps<"/customers/[i
         meta={<RecordStatusBadge status={customer.status} />}
         actions={
           <>
+            {actor.role === "ADMIN" ? <CustomerOwnerControl customerId={id} ownerId={customer.owner?.id ?? null} ownerName={customer.owner?.name ?? null} users={await listUserOptions()} /> : null}
             <RecordStatusControl id={id} status={customer.status} action={setCustomerStatusAction} entityLabel="This customer" triggerLabel="Status" />
             <FormDrawer
               trigger={
@@ -133,7 +136,7 @@ export default async function CustomerDetailPage(props: PageProps<"/customers/[i
               ]}
             />
             <Separator className="my-4" />
-            <KeyValue items={[{ label: "Legal name", value: customer.legalName }, { label: "TRN", value: customer.trn, mono: true }]} />
+            <KeyValue items={[{ label: "Legal name", value: customer.legalName }, { label: "TRN", value: customer.trn, mono: true }, { label: "Owner", value: customer.owner?.name ?? "Shared (everyone)" }]} />
             <Separator className="my-4" />
             <div className="text-xs text-muted-foreground">Notes</div>
             <div className="mt-1">{customer.notes ? <p className="text-sm whitespace-pre-wrap">{customer.notes}</p> : <Unknown />}</div>

@@ -12,10 +12,11 @@ import {
   customerContactUpdateSchema,
   customerCreateSchema,
   customerNoteSchema,
+  customerOwnerSchema,
   customerStatusSchema,
   customerUpdateSchema,
 } from "./schemas";
-import { addCustomerNote, createCustomer, logCustomerCall, setCustomerStatus, updateCustomer } from "./service";
+import { addCustomerNote, createCustomer, logCustomerCall, reassignCustomerOwner, setCustomerStatus, updateCustomer } from "./service";
 
 /** Thin server actions: FormData -> zod -> service -> revalidate -> ActionResult. All business rules live in the services. */
 type IdResult = ActionResult<{ id: string }>;
@@ -58,6 +59,19 @@ export async function setCustomerStatusAction(_prev: IdResult | null, formData: 
       return { id: input.id };
     },
     { successMessage: "Status updated", formData },
+  );
+}
+
+/** Sales-module visibility, not just a label: ADMIN only (enforced again in the service). */
+export async function reassignCustomerOwnerAction(_prev: IdResult | null, formData: FormData): Promise<IdResult> {
+  return runAction(
+    async () => {
+      const input = customerOwnerSchema.parse(formDataToObject(formData));
+      const customer = await reassignCustomerOwner(await getServiceContext(), input);
+      revalidateCustomer(customer.id);
+      return { id: customer.id };
+    },
+    { successMessage: "Owner updated", formData },
   );
 }
 

@@ -14,8 +14,9 @@ export function CustomersTable({ rows }: { rows: CustomerListRow[] }) {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[30%]">Customer</TableHead>
+            <TableHead className="w-[26%]">Customer</TableHead>
             <TableHead>Location</TableHead>
+            <TableHead>Owner</TableHead>
             <TableHead className="text-right">Contacts</TableHead>
             <TableHead className="text-right">Open enquiries</TableHead>
             <TableHead>Last enquiry</TableHead>
@@ -34,6 +35,7 @@ export function CustomersTable({ rows }: { rows: CustomerListRow[] }) {
                   {row.legalName && row.legalName !== row.name ? <span className="block truncate text-xs text-muted-foreground">{row.legalName}</span> : null}
                 </TableCell>
                 <TableCell>{location || <Unknown dash />}</TableCell>
+                <TableCell className="text-xs">{row.owner ? row.owner.name : <span className="text-muted-foreground">Shared</span>}</TableCell>
                 <TableCell className="num text-right">{row.contactCount}</TableCell>
                 <TableCell className="num text-right">{row.openEnquiries || <span className="text-muted-foreground">0</span>}</TableCell>
                 <TableCell className="num text-xs" title={row.lastEnquiryAt ? formatDateTime(row.lastEnquiryAt) : undefined}>

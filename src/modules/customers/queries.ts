@@ -1,10 +1,13 @@
 import { db } from "../../core/database/client";
 import { Prisma } from "../../generated/prisma/client";
-import type { RecordStatus } from "../../generated/prisma/enums";
+import type { RecordStatus, UserRole } from "../../generated/prisma/enums";
 import { escapeLike } from "../../lib/like";
 import { PAGE_SIZE } from "../../lib/search-params";
 
 export type CustomerListParams = { q?: string; status?: RecordStatus; page: number };
+
+/** The minimum an ownership check needs - never the full Actor type, so a query file stays easy to call from anywhere. */
+export type OwnerActor = { id: string; role: UserRole };
 
 export type CustomerListRow = {
   id: string;
@@ -13,10 +16,21 @@ export type CustomerListRow = {
   emirate: string | null;
   country: string | null;
   status: RecordStatus;
+  owner: { id: string; name: string } | null;
   contactCount: number;
   openEnquiries: number;
   lastEnquiryAt: Date | null;
 };
+
+/**
+ * Sales-module visibility (customers/queries.ts): a customer with no owner is shared (every customer that existed before
+ * ownership was introduced, or one an ADMIN has released); ADMIN sees everything. This is the Sales browse/detail rule -
+ * never applied to the procurement-side pickers below (`listCustomerOptions`, `listCustomerContactOptions`,
+ * `findKnownCustomerByEmail`), which must keep finding any customer regardless of owner.
+ */
+function ownershipWhere(actor: OwnerActor): Prisma.CustomerWhereInput {
+  return actor.role === "ADMIN" ? {} : { OR: [{ ownerId: null }, { ownerId: actor.id }] };
+}
 
 /** Open enquiries and latest enquiry time per customer, for one page of customers. One grouped query (no N+1). */
 async function enquiryStatsByCustomer(customerIds: string[]): Promise<Map<string, { open: number; lastAt: Date }>> {
@@ -33,12 +47,13 @@ async function enquiryStatsByCustomer(customerIds: string[]): Promise<Map<string
 }
 
 /** Server-side filtered, paginated customer list. Archived customers are hidden unless the Archived status is chosen. */
-export async function listCustomers(params: CustomerListParams): Promise<{ rows: CustomerListRow[]; total: number }> {
+export async function listCustomers(params: CustomerListParams, actor: OwnerActor): Promise<{ rows: CustomerListRow[]; total: number }> {
   const q = params.q?.trim();
   const contains = (value: string) => ({ contains: escapeLike(value), mode: "insensitive" as const });
 
   const where: Prisma.CustomerWhereInput = {
     AND: [
+      ownershipWhere(actor),
       params.status ? { status: params.status } : { status: { not: "ARCHIVED" } },
       q
         ? {
@@ -68,6 +83,7 @@ export async function listCustomers(params: CustomerListParams): Promise<{ rows:
         emirate: true,
         country: true,
         status: true,
+        owner: { select: { id: true, name: true } },
         _count: { select: { contacts: { where: { status: { not: "ARCHIVED" } } } } },
       },
     }),
@@ -84,6 +100,7 @@ export async function listCustomers(params: CustomerListParams): Promise<{ rows:
       emirate: c.emirate,
       country: c.country,
       status: c.status,
+      owner: c.owner,
       contactCount: c._count.contacts,
       openEnquiries: stats.get(c.id)?.open ?? 0,
       lastEnquiryAt: stats.get(c.id)?.lastAt ?? null,
@@ -91,8 +108,9 @@ export async function listCustomers(params: CustomerListParams): Promise<{ rows:
   };
 }
 
-export async function getCustomer(id: string) {
-  return db.customer.findUnique({ where: { id } });
+/** Sales-module detail read: null when the customer does not exist OR the actor cannot see it (same as "not found" to the page). */
+export async function getCustomer(id: string, actor: OwnerActor) {
+  return db.customer.findFirst({ where: { AND: [{ id }, ownershipWhere(actor)] }, include: { owner: { select: { id: true, name: true } } } });
 }
 
 /** Contacts of a customer. Archived contacts are included only when asked for. */

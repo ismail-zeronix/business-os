@@ -61,6 +61,7 @@ services:
       APP_SECRET_KEY: ${APP_SECRET_KEY:?set APP_SECRET_KEY in .env - see .env.example}
       DEV_ACTOR_EMAIL: ${DEV_ACTOR_EMAIL:-dev@zeronix.local}
       MAIL_SYNC_INTERVAL_MINUTES: ${MAIL_SYNC_INTERVAL_MINUTES:-5}
+      MAIL_CRON_SECRET: ${MAIL_CRON_SECRET:?set MAIL_CRON_SECRET in .env}
       SETUP_TOKEN: ${SETUP_TOKEN:-}
       APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-}
     networks:
@@ -76,6 +77,30 @@ services:
       start_period: 20s
       retries: 3
     # No `ports:` - only Caddy (on proxy-net) can reach port 3000; it is never published on the host.
+
+  # Triggers POST /api/cron/mail-sync on an interval, entirely inside the internal zeronix-net network (never through
+  # Caddy, never off this host). Replaces relying on host crontab: the schedule lives in this repo's own compose file.
+  # The route itself is already read-only/bounded/incremental (sync.service.ts's per-account cursor and lease); this
+  # container only supplies the "fire every N minutes" part that production was missing.
+  mail-cron:
+    image: curlimages/curl:8.11.1
+    container_name: zeronix-bi-prod-mail-cron
+    restart: unless-stopped
+    environment:
+      MAIL_CRON_SECRET: ${MAIL_CRON_SECRET:?set MAIL_CRON_SECRET in .env}
+      MAIL_SYNC_INTERVAL_MINUTES: ${MAIL_SYNC_INTERVAL_MINUTES:-5}
+    networks:
+      - zeronix-net # reaches zeronix-app directly by Docker DNS; no ports published, not reachable from Caddy or the internet
+    depends_on:
+      zeronix-app:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          curl -fsS -X POST -H "X-Cron-Secret: $$MAIL_CRON_SECRET" http://zeronix-app:3000/api/cron/mail-sync || echo "mail-sync trigger failed"
+          sleep "$$((MAIL_SYNC_INTERVAL_MINUTES * 60))"
+        done
 
 networks:
   proxy-net:

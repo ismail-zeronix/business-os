@@ -6,18 +6,21 @@ import { PanelCaption } from "@/components/application/page-header";
 import { EmptyState } from "@/components/application/states";
 import { UrlSheet } from "@/components/application/url-sheet";
 import { EmailBandPill } from "@/components/application/status-badges";
+import type { SelectOption } from "@/components/forms/multi-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getCurrentActor } from "@/core/permissions/actor";
 import { formatDateTime } from "@/lib/format";
 import { EMAIL_TRIAGE_LABEL } from "@/lib/labels";
+import { listUserOptions } from "@/modules/enquiries/queries";
 import { getEmailMessage, type EmailDetail } from "../queries";
-import { CreateEnquiryFromEmailButton, DismissEmailControl, RestoreEmailButton } from "./triage-actions";
+import { AssignEmailControl, CreateEnquiryFromEmailButton, DismissEmailControl, RestoreEmailButton } from "./triage-actions";
 
 type Address = { name?: string; address?: string };
 const addresses = (value: unknown): string => (Array.isArray(value) ? (value as Address[]).map((a) => (a.name ? `${a.name} <${a.address}>` : a.address)).filter(Boolean).join(", ") : "");
 const fileSize = (bytes: number) => (bytes >= 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB` : bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`);
 
-function EmailPanel({ email }: { email: EmailDetail }) {
+function EmailPanel({ email, currentUserId, users }: { email: EmailDetail; currentUserId: string; users: SelectOption[] }) {
   const attachments = (Array.isArray(email.attachments) ? email.attachments : []) as { filename: string | null; contentType: string; size: number }[];
   // The original is stored unless it was too large or could not be downloaded (both say so in parseError).
   const hasOriginal = !email.parseError || /invalid format/.test(email.parseError);
@@ -34,6 +37,7 @@ function EmailPanel({ email }: { email: EmailDetail }) {
         <h3 className="text-sm font-semibold break-words">{email.subject ?? "(no subject)"}</h3>
 
         <div className="flex flex-wrap items-center gap-2">
+          <AssignEmailControl emailId={email.id} assignedToId={email.assignedTo?.id ?? null} assignedToName={email.assignedTo?.name ?? null} currentUserId={currentUserId} users={users} />
           {email.triageStatus === "NEW" ? (
             <>
               <CreateEnquiryFromEmailButton emailId={email.id} />
@@ -125,10 +129,10 @@ function EmailPanel({ email }: { email: EmailDetail }) {
 /** Server-rendered email drawer for `?email=<id>`. Renders nothing when there is no (valid) id. */
 export async function EmailDrawer({ emailId, closeHref }: { emailId: string | undefined; closeHref: string }) {
   if (!emailId || !z.uuid().safeParse(emailId).success) return null;
-  const email = await getEmailMessage(emailId);
+  const [email, actor, users] = await Promise.all([getEmailMessage(emailId), getCurrentActor(), listUserOptions()]);
   return (
     <UrlSheet key={emailId} closeHref={closeHref} label="Email" title="Email" description="The message as received, how it was scored, and what to do with it." width="40rem">
-      {email ? <EmailPanel email={email} /> : <EmptyState title="Email not found" description="This email does not exist or the link is out of date." />}
+      {email ? <EmailPanel email={email} currentUserId={actor.id} users={users} /> : <EmptyState title="Email not found" description="This email does not exist or the link is out of date." />}
     </UrlSheet>
   );
 }

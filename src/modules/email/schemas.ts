@@ -66,5 +66,8 @@ export type EmailAccountStatusInput = z.output<typeof emailAccountStatusSchema>;
 // ── triage ──────────────────────────────────────────────────────────────────────────────────────────────────────
 export const emailIdSchema = z.object({ id: z.uuid() });
 export const emailDismissSchema = z.object({ id: z.uuid(), reason: requiredText("Reason", 300) });
+/** Empty string (the "Unassigned" choice in the picker) means clear the assignment. */
+export const emailAssignSchema = z.object({ id: z.uuid(), assignedToId: z.preprocess((value) => (value === "" ? null : value), z.uuid().nullable()) });
 
 export type EmailDismissInput = z.output<typeof emailDismissSchema>;
+export type EmailAssignInput = z.output<typeof emailAssignSchema>;

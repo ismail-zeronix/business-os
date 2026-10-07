@@ -1,4 +1,4 @@
-import { requireActor } from "@/core/permissions/actor";
+import { getCurrentActor, requireActor } from "@/core/permissions/actor";
 import { Archive, CircleAlert, FileCheck2, Hourglass, Inbox, List, Mail, Plus, Search, X } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -126,8 +126,9 @@ async function EnquiryList({ searchParams, newEnquiry }: { searchParams: SearchP
 /** Emails that may be enquiries. Nothing here becomes an enquiry until a person creates it. */
 async function EmailTriage({ searchParams }: { searchParams: SearchParams }) {
   const params = parseEmailFilters(searchParams);
-  const [{ rows, total }, accounts] = await Promise.all([listEmailMessages(params), listActiveEmailAccountOptions()]);
-  const filtered = params.band !== "likely-review" || params.status !== "NEW";
+  const actor = await getCurrentActor();
+  const [{ rows, total }, accounts] = await Promise.all([listEmailMessages(params, actor.id), listActiveEmailAccountOptions()]);
+  const filtered = params.band !== "likely-review" || params.status !== "NEW" || params.assignee !== "all";
   const hrefFor = (emailId: string) => buildHref("/enquiries", searchParams, { email: emailId });
 
   return (
@@ -153,6 +154,17 @@ async function EmailTriage({ searchParams }: { searchParams: SearchParams }) {
             { value: "NEW", label: "Waiting for a decision" },
             { value: "ENQUIRY_CREATED", label: "Enquiry created" },
             { value: "DISMISSED", label: "Dismissed" },
+          ]}
+        />
+        <FilterPill
+          param="assignee"
+          label="Assigned"
+          mode="single"
+          defaultValue="all"
+          options={[
+            { value: "all", label: "Anyone" },
+            { value: "mine", label: "Assigned to me" },
+            { value: "unassigned", label: "Unassigned" },
           ]}
         />
         {filtered ? (
