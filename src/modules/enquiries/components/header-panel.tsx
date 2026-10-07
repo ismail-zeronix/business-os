@@ -11,6 +11,7 @@ import { EVIDENCE_CHANNEL_LABEL } from "@/lib/labels";
 import type { EnquiryDetail } from "../queries";
 import { CreateCustomerFromRequesterForm } from "./create-customer-form";
 import { EnquiryHeaderForm } from "./enquiry-header-form";
+import { EnquiryOwnerControl } from "./owner-control";
 
 type ContactOption = SelectOption & { customerId: string };
 
@@ -20,11 +21,13 @@ export function EnquiryHeaderPanel({
   customers,
   contacts,
   owners,
+  isAdmin,
 }: {
   enquiry: EnquiryDetail;
   customers: SelectOption[];
   contacts: ContactOption[];
   owners: SelectOption[];
+  isAdmin: boolean;
 }) {
   const requester = [enquiry.requesterName, enquiry.requesterEmail].filter(Boolean).join(" · ");
   const archived = Boolean(enquiry.archivedAt);
@@ -33,6 +36,7 @@ export function EnquiryHeaderPanel({
   return (
     <>
       <TopbarActions>
+        {isAdmin ? <EnquiryOwnerControl enquiryId={enquiry.id} ownerId={enquiry.assignedTo?.id ?? null} ownerName={enquiry.assignedTo?.name ?? null} users={owners} disabled={archived} /> : null}
         {canPromote ? (
           <FormDrawer
             trigger={
@@ -67,12 +71,10 @@ export function EnquiryHeaderPanel({
               deliveryLocation: enquiry.deliveryLocation,
               blocker: enquiry.blocker,
               nextAction: enquiry.nextAction,
-              assignedToId: enquiry.assignedToId,
               notes: enquiry.notes,
             }}
             customers={customers}
             contacts={contacts}
-            owners={owners}
           />
         </FormDrawer>
       </TopbarActions>

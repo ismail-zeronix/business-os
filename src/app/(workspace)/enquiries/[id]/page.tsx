@@ -50,7 +50,7 @@ export async function generateMetadata(props: PageProps<"/enquiries/[id]">): Pro
 }
 
 export default async function EnquiryWorkspacePage(props: PageProps<"/enquiries/[id]">) {
-  await requireActor();
+  const actor = await requireActor();
   const { id } = await props.params;
   const searchParams = await props.searchParams;
   if (!z.uuid().safeParse(id).success) notFound();
@@ -159,7 +159,7 @@ export default async function EnquiryWorkspacePage(props: PageProps<"/enquiries/
 
       {suggestions.length || requiredByText ? <SuggestionsStrip enquiryId={id} suggestions={archived ? [] : suggestions} requiredByText={requiredByText} /> : null}
 
-      <EnquiryHeaderPanel enquiry={enquiry} customers={customers} contacts={contacts} owners={owners} />
+      <EnquiryHeaderPanel enquiry={enquiry} customers={customers} contacts={contacts} owners={owners} isAdmin={actor.role === "ADMIN"} />
 
       <TabNav
         basePath={basePath}
