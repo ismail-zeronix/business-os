@@ -37,7 +37,7 @@ function Progress({ counts }: { counts: EnquiryListRow["counts"] }) {
   const reviewed = counts.confirmed + counts.ignored;
   return (
     <div className="flex items-center gap-2" title={`${counts.confirmed} confirmed, ${counts.ignored} ignored, ${counts.pending} pending`}>
-      <span aria-hidden className="h-1.5 w-14 overflow-hidden rounded-full bg-zinc-200">
+      <span aria-hidden className="h-1.5 w-14 overflow-hidden rounded-full bg-muted">
         <span className={counts.pending === 0 ? "block h-full rounded-full bg-emerald-500" : "block h-full rounded-full bg-brand"} style={{ width: `${Math.round((reviewed / counts.total) * 100)}%` }} />
       </span>
       <span className="num text-xs text-muted-foreground">
@@ -71,7 +71,7 @@ export function EnquiriesTable({ rows, showCustomer = true, bare = false, peekHr
         {rows.map((row) => {
           const who = row.customerName ?? row.requesterName ?? row.requesterEmail;
           return (
-            <TableRow key={row.id} className="relative border-border/70 hover:bg-zinc-50/80">
+            <TableRow key={row.id} className="relative border-border/70 hover:bg-surface">
               <TableCell className="h-[60px] px-4 py-2">
                 <div className="flex items-center gap-3">
                   {showCustomer ? <InitialsAvatar name={who ?? "?"} muted={!row.customerName} /> : null}
@@ -112,7 +112,7 @@ export function EnquiriesTable({ rows, showCustomer = true, bare = false, peekHr
                     scroll={false}
                     aria-label={`Quick view of ${enquiryReference(row.number)}`}
                     title="Quick view"
-                    className="relative z-10 inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-zinc-100 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
+                    className="relative z-10 inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
                   >
                     <PanelRight className="size-4" strokeWidth={1.5} aria-hidden />
                   </Link>

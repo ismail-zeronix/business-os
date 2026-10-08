@@ -43,7 +43,7 @@ export function TabBar() {
   if (tabs.length === 0) return null;
 
   return (
-    <div role="tablist" aria-label="Open pages" className="flex h-9 shrink-0 items-stretch overflow-x-auto border-b bg-zinc-50/70">
+    <div role="tablist" aria-label="Open pages" className="flex h-9 shrink-0 items-stretch overflow-x-auto border-b bg-surface">
       {tabs.map((tabPath) => {
         const isActive = tabPath === active;
         const label = labelFor(tabPath);
@@ -54,7 +54,7 @@ export function TabBar() {
             aria-selected={isActive}
             className={cn(
               "group flex shrink-0 items-stretch border-r border-t-2 text-[13px] transition-colors",
-              isActive ? "border-t-brand bg-background text-foreground" : "border-t-transparent text-muted-foreground hover:bg-zinc-100/60 hover:text-foreground",
+              isActive ? "border-t-brand bg-background text-foreground" : "border-t-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
             <Link href={hrefFor(tabPath)} title={tabPath} className="flex items-center gap-2 py-1.5 pr-1.5 pl-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
@@ -62,7 +62,7 @@ export function TabBar() {
               <span className="max-w-40 truncate">{label}</span>
             </Link>
             <button type="button" onClick={(event) => handleClose(tabPath, event)} aria-label={`Close ${label}`} className="flex items-center rounded p-0.5 pr-2 text-muted-foreground/70 hover:text-foreground">
-              <span className="rounded p-0.5 hover:bg-zinc-200">
+              <span className="rounded p-0.5 hover:bg-border">
                 <X className="size-3.5" strokeWidth={1.5} aria-hidden />
               </span>
             </button>

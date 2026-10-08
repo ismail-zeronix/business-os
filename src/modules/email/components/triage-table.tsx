@@ -34,7 +34,7 @@ export function EmailTriageTable({ rows, hrefFor, bare = false }: { rows: EmailL
         {rows.map((row) => {
           const sender = row.fromName ?? row.fromAddress;
           return (
-            <TableRow key={row.id} className="relative border-border/70 hover:bg-zinc-50/80">
+            <TableRow key={row.id} className="relative border-border/70 hover:bg-surface">
               <TableCell className="h-[60px] px-4 py-2">
                 <div className="flex items-center gap-3">
                   <InitialsAvatar name={sender ?? "?"} />

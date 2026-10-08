@@ -23,7 +23,7 @@ function Caption({ children }: { children: React.ReactNode }) {
 /** A navigation shortcut: a tinted icon square, a title with a hint, and a chevron. */
 function ActionRow({ href, icon: Icon, tone, title, hint }: { href: string; icon: LucideIcon; tone: string; title: string; hint: string }) {
   return (
-    <Link href={href} className="flex items-center gap-3 rounded-lg border bg-background p-3 transition-colors outline-none hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-ring/60">
+    <Link href={href} className="flex items-center gap-3 rounded-lg border bg-background p-3 transition-colors outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring/60">
       <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${tone}`}>
         <Icon className="size-[18px]" strokeWidth={1.5} aria-hidden />
       </span>
@@ -123,7 +123,7 @@ async function PeekBody({ enquiry, closeHref }: { enquiry: EnquiryPeek; closeHre
 
         <section>
           <Caption>Actions</Caption>
-          <div className="space-y-1.5 rounded-lg bg-zinc-50 p-1.5">
+          <div className="space-y-1.5 rounded-lg bg-surface p-1.5">
             <ActionRow href={workspace} icon={ClipboardCheck} tone="bg-lime-100 text-lime-800" title="Review requirements" hint={pending ? `${pending} waiting for review` : "Everything is reviewed"} />
             <ActionRow href={`${workspace}?view=activity`} icon={MessageSquare} tone="bg-violet-100 text-violet-700" title="Notes and activity" hint="Add a note, see every change" />
             {enquiry.customer ? <ActionRow href={`/customers/${enquiry.customer.id}`} icon={UserRound} tone="bg-emerald-100 text-emerald-700" title="Customer" hint={enquiry.customer.name} /> : null}

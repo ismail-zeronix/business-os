@@ -27,7 +27,7 @@ export function SettingsNav() {
                       aria-current={active ? "page" : undefined}
                       className={cn(
                         "flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-                        active ? "bg-zinc-100 font-medium text-foreground" : "text-foreground/70 hover:bg-zinc-50 hover:text-foreground",
+                        active ? "bg-muted font-medium text-foreground" : "text-foreground/70 hover:bg-surface hover:text-foreground",
                       )}
                     >
                       <Icon className={cn("size-4 shrink-0", active && "text-brand")} strokeWidth={1.5} aria-hidden />

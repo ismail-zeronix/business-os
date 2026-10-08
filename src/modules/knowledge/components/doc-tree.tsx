@@ -67,7 +67,7 @@ function Node({ node, depth, active, open, toggle, query }: { node: KnowledgeNod
           style={indent}
           className={cn(
             "flex h-7 items-center gap-2 rounded-md pr-2 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/60",
-            isActive ? "bg-zinc-100 font-medium text-foreground" : "text-foreground/70 hover:bg-zinc-50 hover:text-foreground",
+            isActive ? "bg-muted font-medium text-foreground" : "text-foreground/70 hover:bg-surface hover:text-foreground",
           )}
         >
           <FileText className={cn("size-3.5 shrink-0", isActive && "text-brand")} strokeWidth={1.5} aria-hidden />
@@ -87,7 +87,7 @@ function Node({ node, depth, active, open, toggle, query }: { node: KnowledgeNod
         onClick={() => toggle(node.path)}
         aria-expanded={isOpen}
         style={indent}
-        className="flex h-7 w-full items-center gap-1.5 rounded-md pr-2 text-left text-[13px] font-medium text-foreground/80 outline-none transition-colors hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-ring/60"
+        className="flex h-7 w-full items-center gap-1.5 rounded-md pr-2 text-left text-[13px] font-medium text-foreground/80 outline-none transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring/60"
       >
         <ChevronRight className={cn("size-3 shrink-0 transition-transform", isOpen && "rotate-90")} strokeWidth={1.5} aria-hidden />
         <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden />
@@ -153,7 +153,7 @@ export function DocTree({ tree }: { tree: KnowledgeNode[] }) {
           className="h-full w-full min-w-0 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
         />
         {query ? (
-          <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-zinc-100 hover:text-foreground">
+          <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground">
             <X className="size-3.5" strokeWidth={1.5} aria-hidden />
           </button>
         ) : null}

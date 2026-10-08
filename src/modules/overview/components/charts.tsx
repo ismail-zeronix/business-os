@@ -105,7 +105,7 @@ export function PipelineChart({ data }: { data: EnquiryCharts["pipeline"] }) {
 }
 
 const BAND_LABEL: Record<FreshnessBand, string> = { fresh: "Under 24 hours", recent: "Under 7 days", aging: "Under 14 days", stale: "14 days or more" };
-const BAND_COLOR: Record<FreshnessBand, string> = { fresh: "bg-green-600", recent: "bg-lime-400", aging: "bg-amber-400", stale: "bg-zinc-300" };
+const BAND_COLOR: Record<FreshnessBand, string> = { fresh: "bg-green-600", recent: "bg-lime-400", aging: "bg-amber-400", stale: "bg-muted-foreground/30" };
 
 /** Age of the latest price for every product and supplier pair: how much of what we know is still current. */
 export function FreshnessChart({ data }: { data: PriceFreshness }) {

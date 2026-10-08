@@ -51,7 +51,7 @@ export function EditorPane({ doc, view }: { doc: KnowledgePage; view: DocView })
               key={option}
               href={hrefFor(doc.path, option)}
               aria-current={view === option ? "true" : undefined}
-              className={cn("rounded px-2.5 py-0.5 capitalize transition-colors", view === option ? "bg-zinc-100 font-medium text-foreground" : "text-muted-foreground hover:text-foreground")}
+              className={cn("rounded px-2.5 py-0.5 capitalize transition-colors", view === option ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground")}
             >
               {option}
             </Link>
@@ -69,7 +69,7 @@ export function EditorPane({ doc, view }: { doc: KnowledgePage; view: DocView })
         )}
       </div>
 
-      <div className="flex h-6 shrink-0 items-center gap-4 border-t bg-zinc-50/70 px-3 text-[11px] text-muted-foreground">
+      <div className="flex h-6 shrink-0 items-center gap-4 border-t bg-surface px-3 text-[11px] text-muted-foreground">
         <span>Markdown</span>
         <span>{lineCount} lines</span>
         <span>Read only</span>

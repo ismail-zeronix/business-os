@@ -19,7 +19,7 @@ export default async function KnowledgeLayout({ children }: LayoutProps<"/knowle
 
   return (
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-      <aside aria-label="Explorer" className="flex max-h-64 w-full shrink-0 flex-col border-b bg-zinc-50/70 md:max-h-none md:w-72 md:border-r md:border-b-0">
+      <aside aria-label="Explorer" className="flex max-h-64 w-full shrink-0 flex-col border-b bg-surface md:max-h-none md:w-72 md:border-r md:border-b-0">
         <div className="flex h-9 shrink-0 items-center border-b px-3 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">Explorer</div>
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           {tree === null ? <ErrorState title="Could not read the knowledge pages" message="Try again in a moment." /> : <DocTree tree={tree} />}
