@@ -61,7 +61,6 @@ export const enquiryHeaderSchema = z.object({
   deliveryLocation: optionalText(200),
   blocker: optionalText(500),
   nextAction: optionalText(500),
-  assignedToId: optionalUuid("Choose a valid owner"),
   notes: optionalText(2000),
 });
 
@@ -70,6 +69,8 @@ export const enquiryStatusSchema = z.object({ id: z.uuid(), status: z.enum(Enqui
 export const enquiryNoteSchema = z.object({ id: z.uuid(), note: requiredText("Note", 2000) });
 export const enquiryArchiveSchema = z.object({ id: z.uuid(), archived: checkbox() });
 export const enquirySuggestionSchema = z.object({ id: z.uuid(), field: z.enum(["deliveryLocation", "priority"]) });
+/** Empty string (the "Unassigned" choice in the picker) means make the enquiry unassigned again. */
+export const enquiryOwnerSchema = z.object({ id: z.uuid(), assignedToId: z.preprocess((value) => (value === "" ? null : value), z.uuid().nullable()) });
 export const customerFromRequesterSchema = z.object({
   enquiryId: z.uuid(),
   name: requiredText("Customer name", 200),
@@ -101,6 +102,7 @@ export type EnquiryStatusInput = z.output<typeof enquiryStatusSchema>;
 export type EnquiryNoteInput = z.output<typeof enquiryNoteSchema>;
 export type EnquiryArchiveInput = z.output<typeof enquiryArchiveSchema>;
 export type EnquirySuggestionInput = z.output<typeof enquirySuggestionSchema>;
+export type EnquiryOwnerInput = z.output<typeof enquiryOwnerSchema>;
 export type CustomerFromRequesterInput = z.output<typeof customerFromRequesterSchema>;
 export type EnquiryItemFields = z.output<typeof enquiryItemFieldsSchema>;
 export type EnquiryItemUpdateInput = z.output<typeof enquiryItemUpdateSchema>;

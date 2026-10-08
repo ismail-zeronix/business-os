@@ -55,6 +55,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "enquiry.status_changed": "Enquiry status changed",
   "enquiry.note_added": "Note added",
   "enquiry.archived": "Enquiry archived",
+  "enquiry.owner_changed": "Enquiry owner changed",
   "enquiry.bulk_confirmed": "Ready requirements bulk-confirmed",
   "enquiry_item.created": "Requirement added",
   "enquiry_item.updated": "Requirement edited",

@@ -31,10 +31,11 @@ import {
   enquiryItemReasonSchema,
   enquiryItemUpdateSchema,
   enquiryNoteSchema,
+  enquiryOwnerSchema,
   enquiryStatusSchema,
   enquirySuggestionSchema,
 } from "./schemas";
-import { addEnquiryNote, applyHeaderSuggestion, createCustomerFromRequester, createEnquiry, setEnquiryArchived, setEnquiryStatus, updateEnquiryHeader } from "./service";
+import { addEnquiryNote, applyHeaderSuggestion, createCustomerFromRequester, createEnquiry, reassignEnquiryOwner, setEnquiryArchived, setEnquiryStatus, updateEnquiryHeader } from "./service";
 
 /** Thin server actions for the enquiry workflow: FormData -> zod -> service -> revalidate -> ActionResult. Rules live in the services. */
 type IdResult = ActionResult<{ id: string }>;
@@ -81,6 +82,19 @@ export async function updateEnquiryHeaderAction(_prev: IdResult | null, formData
       return { id: enquiry.id };
     },
     { successMessage: "Enquiry saved", formData },
+  );
+}
+
+/** Sales-ops attribution only, not visibility - ADMIN only (enforced again in the service). */
+export async function reassignEnquiryOwnerAction(_prev: IdResult | null, formData: FormData): Promise<IdResult> {
+  return runAction(
+    async () => {
+      const input = enquiryOwnerSchema.parse(formDataToObject(formData));
+      const enquiry = await reassignEnquiryOwner(await getServiceContext(), input);
+      refreshEnquiry(enquiry.id, true);
+      return { id: enquiry.id };
+    },
+    { successMessage: "Owner updated", formData },
   );
 }
 

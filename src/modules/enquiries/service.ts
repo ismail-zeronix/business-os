@@ -1,5 +1,6 @@
 import { ConflictError, InvariantError, NotFoundError, ValidationError } from "../../core/errors";
 import { inTransaction, type ServiceContext } from "../../core/database/tx";
+import { assertAdmin } from "../../core/permissions/roles";
 import type { Prisma } from "../../generated/prisma/client";
 import type { EvidenceChannel } from "../../generated/prisma/enums";
 import { diffFields } from "../../lib/diff";
@@ -12,7 +13,7 @@ import { enquiryRulesParser } from "./parsing/enquiry-parser";
 import { createParsedRequirements, proposeRequirementsForItem } from "./requirement.service";
 import { emailHeaderLineCount, emailSubjectLineIndex } from "./parsing/quoted";
 import type { EnquiryHeaderProposal } from "./parsing/types";
-import type { CustomerFromRequesterInput, EnquiryArchiveInput, EnquiryHeaderInput, EnquiryNoteInput, EnquirySuggestionInput, EnquiryStatusInput } from "./schemas";
+import type { CustomerFromRequesterInput, EnquiryArchiveInput, EnquiryHeaderInput, EnquiryNoteInput, EnquiryOwnerInput, EnquirySuggestionInput, EnquiryStatusInput } from "./schemas";
 import { assertCustomerAndContact, requireNotArchived, touchEnquiry } from "./shared";
 
 /**
@@ -123,19 +124,15 @@ const HEADER_FIELDS = ["requesterName", "requesterEmail", "subject", "priority",
 
 export async function updateEnquiryHeader(ctx: ServiceContext, input: EnquiryHeaderInput) {
   return inTransaction(ctx, async (c) => {
-    const { id, customerId, contactId, assignedToId, ...fields } = input;
+    const { id, customerId, contactId, ...fields } = input;
     const existing = await c.db.enquiry.findUnique({
       where: { id },
-      include: { customer: { select: { name: true } }, contact: { select: { name: true } }, assignedTo: { select: { name: true } } },
+      include: { customer: { select: { name: true } }, contact: { select: { name: true } } },
     });
     if (!existing) throw new NotFoundError("Enquiry");
     requireNotArchived(existing);
 
     await assertCustomerAndContact(c, customerId, contactId, { customerId: existing.customerId, contactId: existing.contactId });
-    if (assignedToId && assignedToId !== existing.assignedToId) {
-      const user = await c.db.user.findUnique({ where: { id: assignedToId }, select: { status: true } });
-      if (!user || user.status !== "ACTIVE") throw new ValidationError("That owner is not available.", { assignedToId: "Choose an active user" });
-    }
 
     const details: Record<string, Prisma.InputJsonValue> = { ...diffFields(existing, fields, HEADER_FIELDS) };
     if (customerId !== existing.customerId) {
@@ -146,14 +143,50 @@ export async function updateEnquiryHeader(ctx: ServiceContext, input: EnquiryHea
       const next = contactId ? await c.db.customerContact.findUnique({ where: { id: contactId }, select: { name: true } }) : null;
       details.contact = { from: existing.contact?.name ?? null, to: next?.name ?? null };
     }
-    if (assignedToId !== existing.assignedToId) {
-      const next = assignedToId ? await c.db.user.findUnique({ where: { id: assignedToId }, select: { name: true } }) : null;
-      details.owner = { from: existing.assignedTo?.name ?? null, to: next?.name ?? null };
-    }
     if (Object.keys(details).length === 0) return existing;
 
-    const updated = await c.db.enquiry.update({ where: { id }, data: { ...fields, customerId, contactId, assignedToId, lastActivityAt: new Date() } });
+    const updated = await c.db.enquiry.update({ where: { id }, data: { ...fields, customerId, contactId, lastActivityAt: new Date() } });
     await writeAudit(c, { action: "enquiry.updated", entityType: "Enquiry", entityId: id, details });
+    return updated;
+  });
+}
+
+/**
+ * Who this enquiry is assigned to - attribution only (KPI reporting, "assigned to me" filtering). Unlike `Customer.ownerId`,
+ * this never restricts who can see or work the enquiry: procurement still needs every enquiry visible regardless of sales
+ * ownership (docs/superpowers/specs/2026-10-08-sales-operations-design.md, section 4). ADMIN only. Assigning to someone also
+ * sets the linked Customer's owner, but only when that customer is currently unowned - never silently taking a customer away
+ * from a rep who already owns them.
+ */
+export async function reassignEnquiryOwner(ctx: ServiceContext, input: EnquiryOwnerInput) {
+  assertAdmin(ctx);
+  return inTransaction(ctx, async (c) => {
+    const existing = await c.db.enquiry.findUnique({
+      where: { id: input.id },
+      select: { id: true, archivedAt: true, customerId: true, assignedToId: true, assignedTo: { select: { name: true } } },
+    });
+    if (!existing) throw new NotFoundError("Enquiry");
+    requireNotArchived(existing);
+    if (input.assignedToId === existing.assignedToId) return existing;
+
+    let nextName: string | null = null;
+    if (input.assignedToId) {
+      const user = await c.db.user.findUnique({ where: { id: input.assignedToId }, select: { status: true, name: true } });
+      if (!user || user.status !== "ACTIVE") throw new ValidationError("That owner is not available.", { assignedToId: "Choose an active user" });
+      nextName = user.name;
+    }
+
+    const updated = await c.db.enquiry.update({ where: { id: input.id }, data: { assignedToId: input.assignedToId } });
+    await writeAudit(c, { action: "enquiry.owner_changed", entityType: "Enquiry", entityId: input.id, details: { owner: { from: existing.assignedTo?.name ?? null, to: nextName } } });
+
+    if (existing.customerId && input.assignedToId) {
+      const customer = await c.db.customer.findUnique({ where: { id: existing.customerId }, select: { ownerId: true } });
+      if (customer && customer.ownerId === null) {
+        await c.db.customer.update({ where: { id: existing.customerId }, data: { ownerId: input.assignedToId } });
+        await writeAudit(c, { action: "customer.owner_changed", entityType: "Customer", entityId: existing.customerId, details: { owner: { from: null, to: nextName }, via: "enquiry" } });
+      }
+    }
+
     return updated;
   });
 }
