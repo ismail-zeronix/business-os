@@ -4,6 +4,7 @@ import Link from "next/link";
 import { z } from "zod";
 import { Panel } from "@/components/application/page-canvas";
 import { PageHeader } from "@/components/application/page-header";
+import { InitialsAvatar } from "@/components/application/soft-pill";
 import { EmptyState } from "@/components/application/states";
 import { DateRangeFilter } from "@/components/data-table/date-filter";
 import { FilterBar } from "@/components/data-table/filter-bar";
@@ -89,7 +90,16 @@ export default async function AuditPage(props: PageProps<"/audit">) {
                         <span className="num block">{formatDateTime(row.createdAt)}</span>
                         <span className="num block text-xs text-muted-foreground">{formatRelativeAge(row.createdAt, now)}</span>
                       </TableCell>
-                      <TableCell className="h-auto py-2">{row.actorName ?? <span className="text-muted-foreground">System</span>}</TableCell>
+                      <TableCell className="h-auto py-2">
+                        {row.actorName ? (
+                          <div className="flex items-center gap-2">
+                            <InitialsAvatar name={row.actorName} size={24} />
+                            <span className="truncate">{row.actorName}</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">System</span>
+                        )}
+                      </TableCell>
                       <TableCell className="h-auto py-2 font-medium">{auditActionLabel(row.action)}</TableCell>
                       <TableCell className="h-auto py-2">
                         {href ? (
