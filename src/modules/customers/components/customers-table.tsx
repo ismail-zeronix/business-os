@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { InitialsAvatar } from "@/components/application/soft-pill";
 import { RecordStatusBadge } from "@/components/application/status-badges";
 import { Unknown } from "@/components/application/states";
 import { TableShell } from "@/components/data-table/table-shell";
@@ -35,7 +36,16 @@ export function CustomersTable({ rows }: { rows: CustomerListRow[] }) {
                   {row.legalName && row.legalName !== row.name ? <span className="block truncate text-xs text-muted-foreground">{row.legalName}</span> : null}
                 </TableCell>
                 <TableCell>{location || <Unknown dash />}</TableCell>
-                <TableCell className="text-xs">{row.owner ? row.owner.name : <span className="text-muted-foreground">Shared</span>}</TableCell>
+                <TableCell className="text-xs">
+                  {row.owner ? (
+                    <div className="flex items-center gap-2">
+                      <InitialsAvatar name={row.owner.name} size={24} />
+                      <span className="truncate">{row.owner.name}</span>
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">Shared</span>
+                  )}
+                </TableCell>
                 <TableCell className="num text-right">{row.contactCount}</TableCell>
                 <TableCell className="num text-right">{row.openEnquiries || <span className="text-muted-foreground">0</span>}</TableCell>
                 <TableCell className="num text-xs" title={row.lastEnquiryAt ? formatDateTime(row.lastEnquiryAt) : undefined}>
