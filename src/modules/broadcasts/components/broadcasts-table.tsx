@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { InitialsAvatar } from "@/components/application/soft-pill";
 import { EmptyState, Unknown } from "@/components/application/states";
 import { FreshnessBadge } from "@/components/application/status-badges";
 import { TableShell } from "@/components/data-table/table-shell";
@@ -50,7 +51,12 @@ export function BroadcastsTable({ rows, showSupplier = true }: { rows: Broadcast
                   </span>
                 )}
               </TableCell>
-              <TableCell className="truncate text-muted-foreground">{row.createdByName}</TableCell>
+              <TableCell className="truncate text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <InitialsAvatar name={row.createdByName} size={24} />
+                  <span className="truncate">{row.createdByName}</span>
+                </div>
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
