@@ -9,6 +9,7 @@ import { requireActorOrNull, signInEnabled } from "@/core/permissions/actor";
 import { AssistantLauncher } from "@/modules/ai/components/assistant-launcher";
 import { countBroadcastsAwaitingReview } from "@/modules/broadcasts/queries";
 import { countEnquiriesNeedingAttention } from "@/modules/enquiries/queries";
+import { countTasksForActor } from "@/modules/tasks/queries";
 
 /** The shell must still render if the database is down: each piece of shell data fails on its own, and pages show the real error themselves. */
 async function safely<T>(work: Promise<T>): Promise<T | null> {
@@ -30,10 +31,11 @@ async function safely<T>(work: Promise<T>): Promise<T | null> {
  */
 export default async function WorkspaceLayout({ children }: LayoutProps<"/">) {
   const actor = await requireActorOrNull();
-  const [signInOn, attention, awaiting, cookieStore] = await Promise.all([
+  const [signInOn, attention, awaiting, myTasks, cookieStore] = await Promise.all([
     safely(signInEnabled()),
     safely(countEnquiriesNeedingAttention()),
     safely(countBroadcastsAwaitingReview()),
+    actor ? safely(countTasksForActor(actor.id)) : Promise.resolve(null),
     cookies(),
   ]);
   const account = actor ? { name: actor.name, email: actor.email, role: actor.role } : null;
@@ -43,7 +45,7 @@ export default async function WorkspaceLayout({ children }: LayoutProps<"/">) {
   return (
     <ShellProvider>
       <SidebarProvider defaultOpen={sidebarOpen} className="h-svh overflow-hidden">
-        <AppSidebar account={account} signedIn={signedIn} counts={{ "/enquiries": attention ?? 0, "/broadcasts": awaiting ?? 0 }} />
+        <AppSidebar account={account} signedIn={signedIn} counts={{ "/enquiries": attention ?? 0, "/broadcasts": awaiting ?? 0, "/tasks": myTasks ?? 0 }} />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar account={account} signedIn={signedIn} attention={attention ?? 0} />
           {signInOn === false ? (

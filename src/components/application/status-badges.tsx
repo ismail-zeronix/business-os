@@ -1,8 +1,9 @@
-import type { EmailBand, EnquiryPriority, EnquiryStatus, ExtractionConfidence, InvoiceStatus, ItemReviewStatus, MatchBasis, QuotationStatus, RecordStatus, StockStatus, SupplierRequestStatus, VatState } from "@/generated/prisma/enums";
+import type { EmailBand, EnquiryPriority, EnquiryStatus, ExtractionConfidence, InvoiceStatus, ItemReviewStatus, MatchBasis, QuotationStatus, RecordStatus, StockStatus, SupplierRequestStatus, TaskPriority, TaskStatus, VatState } from "@/generated/prisma/enums";
 import type { SpecVerdict } from "@/modules/specs/verdict";
+import type { TaskUrgency } from "@/modules/tasks/urgency";
 import { SoftPill, type PillTone } from "@/components/application/soft-pill";
 import { Badge } from "@/components/ui/badge";
-import { formatDateTime, formatRelativeAge } from "@/lib/format";
+import { formatDate, formatDateTime, formatRelativeAge } from "@/lib/format";
 import { getFreshnessBand, type FreshnessBand } from "@/lib/freshness";
 import {
   CONFIDENCE_LABEL,
@@ -16,6 +17,8 @@ import {
   SPEC_VERDICT_LABEL,
   STOCK_STATUS_LABEL,
   SUPPLIER_REQUEST_STATUS_LABEL,
+  TASK_PRIORITY_LABEL,
+  TASK_STATUS_LABEL,
   VAT_STATE_LABEL,
 } from "@/lib/labels";
 
@@ -196,6 +199,43 @@ export function InvoiceStatusPill({ status }: { status: InvoiceStatus }) {
     <SoftPill tone={INVOICE_STATUS_TONE[status]} dot>
       {INVOICE_STATUS_LABEL[status]}
     </SoftPill>
+  );
+}
+
+export const TASK_PRIORITY_TONE: Record<TaskPriority, PillTone> = { URGENT: "red", HIGH: "orange", NORMAL: "neutral", LOW: "neutral" };
+
+/** NORMAL is the quiet default: plain muted text, so a coloured pill always means "look at this" - same rule as Enquiry's PriorityPill. */
+export function TaskPriorityPill({ priority }: { priority: TaskPriority }) {
+  if (priority === "NORMAL") return <span className="text-xs text-muted-foreground">Normal</span>;
+  return (
+    <SoftPill tone={TASK_PRIORITY_TONE[priority]} dot={priority !== "LOW"}>
+      {TASK_PRIORITY_LABEL[priority]}
+    </SoftPill>
+  );
+}
+
+export const TASK_STATUS_TONE: Record<TaskStatus, PillTone> = { OPEN: "sky", DONE: "green", CANCELLED: "neutral" };
+
+export function TaskStatusPill({ status }: { status: TaskStatus }) {
+  return (
+    <SoftPill tone={TASK_STATUS_TONE[status]} dot={status !== "CANCELLED"}>
+      {TASK_STATUS_LABEL[status]}
+    </SoftPill>
+  );
+}
+
+const TASK_URGENCY_VARIANT: Record<TaskUrgency, "neutral" | "warning" | "danger"> = { normal: "neutral", aging: "warning", overdue: "danger" };
+
+/**
+ * How late a task is: a due date wins when one is set ("Due 12 Oct" / "Overdue 3 days ago"), otherwise the age of
+ * whatever the urgency is computed from (an enquiry's last activity, an email's receipt, a task's creation).
+ */
+export function TaskUrgencyBadge({ urgency, dueAt, anchorAt, now = new Date() }: { urgency: TaskUrgency; dueAt: Date | null; anchorAt: Date; now?: Date }) {
+  const label = dueAt ? (urgency === "overdue" ? `Overdue, due ${formatDate(dueAt)}` : `Due ${formatDate(dueAt)}`) : formatRelativeAge(anchorAt, now);
+  return (
+    <Badge variant={TASK_URGENCY_VARIANT[urgency]} className="num" title={dueAt ? `Due ${formatDateTime(dueAt)}` : `Since ${formatDateTime(anchorAt)}`}>
+      {label}
+    </Badge>
   );
 }
 

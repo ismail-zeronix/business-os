@@ -17,6 +17,8 @@ import type {
   StockStatus,
   SupplierRequestStatus,
   SupplierType,
+  TaskPriority,
+  TaskStatus,
   UserRole,
   VatState,
   WarrantyType,
@@ -204,6 +206,19 @@ export const SPEC_VERDICT_LABEL: Record<SpecVerdict, string> = {
   PARTIAL: "Partial match",
   MISMATCH: "Does not match",
   UNKNOWN: "Unknown",
+};
+
+export const TASK_PRIORITY_LABEL: Record<TaskPriority, string> = {
+  LOW: "Low",
+  NORMAL: "Normal",
+  HIGH: "High",
+  URGENT: "Urgent",
+};
+
+export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
+  OPEN: "Open",
+  DONE: "Done",
+  CANCELLED: "Cancelled",
 };
 
 /** Options for <select> controls, in a stable, deliberate order. */
