@@ -62,7 +62,18 @@ function ConfirmAction({
   );
 }
 
-export function CreateQuotationButton({ enquiryId, disabled, disabledTitle }: { enquiryId: string; disabled?: boolean; disabledTitle?: string }) {
+export function CreateQuotationButton({
+  enquiryId,
+  disabled,
+  disabledTitle,
+  variant = "outline",
+}: {
+  enquiryId: string;
+  disabled?: boolean;
+  disabledTitle?: string;
+  /** "default" promotes this to the navbar's one primary action when it is the most relevant quotation action. */
+  variant?: "outline" | "default";
+}) {
   return (
     <ConfirmAction
       action={createQuotationAction}
@@ -73,6 +84,7 @@ export function CreateQuotationButton({ enquiryId, disabled, disabledTitle }: { 
       description="Makes a draft with one line per confirmed requirement, using the chosen supplier's price as the cost. Nothing is sent to the customer."
       submitLabel="Create draft"
       pendingLabel="Creating..."
+      variant={variant}
       disabled={disabled}
       disabledTitle={disabledTitle}
     />

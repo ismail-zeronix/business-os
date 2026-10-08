@@ -1,11 +1,12 @@
 import { requireActor } from "@/core/permissions/actor";
-import { Download, Plus } from "lucide-react";
+import { Download, FileText, MoreHorizontal, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { PageBody, Panel } from "@/components/application/page-canvas";
 import { PageHeader } from "@/components/application/page-header";
+import { RecordHeader } from "@/components/application/record-header";
 import { EmptyState } from "@/components/application/states";
 import { SoftPill } from "@/components/application/soft-pill";
 import { EnquiryStatusPill, PriorityPill } from "@/components/application/status-badges";
@@ -14,6 +15,9 @@ import { Timeline } from "@/components/application/timeline";
 import { FormDrawer } from "@/components/forms/form-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { formatRelativeAge } from "@/lib/format";
+import { ENQUIRY_PRIORITY_LABEL, ENQUIRY_STATUS_LABEL, EVIDENCE_CHANNEL_LABEL } from "@/lib/labels";
 import { buildHref, firstParam } from "@/lib/search-params";
 import { cn } from "@/lib/utils";
 import { listActivity } from "@/modules/audit/queries";
@@ -32,7 +36,8 @@ import type { EnquiryHeaderProposal } from "@/modules/enquiries/parsing/types";
 import { getEnquiry, getEnquiryItemCandidates, listEnquiriesNeedingAttention, listUserOptions } from "@/modules/enquiries/queries";
 import { EvidenceDrawer } from "@/modules/evidence/components/evidence-drawer";
 import { listBrandOptions, listCategoryOptions } from "@/modules/products/master-data.queries";
-import { EnquiryQuotationActions } from "@/modules/quotations/components/enquiry-quotation-actions";
+import { planQuotationNav, quotationLinkLabel } from "@/modules/quotations/components/enquiry-quotation-actions";
+import { CreateQuotationButton } from "@/modules/quotations/components/quotation-actions";
 import { listQuotationsForEnquiry } from "@/modules/quotations/queries";
 import { SourcingTab } from "@/modules/sourcing/components/sourcing-tab";
 import { Alert } from "@/components/ui/alert";
@@ -114,6 +119,21 @@ export default async function EnquiryWorkspacePage(props: PageProps<"/enquiries/
   const archived = Boolean(enquiry.archivedAt);
   const who = enquiry.customer?.name ?? enquiry.requesterName ?? enquiry.requesterEmail ?? "No customer";
 
+  const quotationNav = planQuotationNav({ quotations, confirmedCount: counts.confirmed, archived });
+  const quotationLink = (quotation: (typeof quotations)[number], variant: "outline" | "default") => (
+    <Button key={quotation.id} asChild variant={variant} size="sm">
+      <Link href={`/quotations/${quotation.id}`}>
+        <FileText aria-hidden /> {quotationLinkLabel(quotation)}
+      </Link>
+    </Button>
+  );
+  const primaryAction = quotationNav.promoteCreate ? (
+    <CreateQuotationButton enquiryId={id} variant="default" />
+  ) : quotationNav.primaryQuotation ? (
+    quotationLink(quotationNav.primaryQuotation, "default")
+  ) : null;
+  const hasOverflowQuotationItems = quotationNav.overflowQuotations.length > 0 || quotationNav.showCreateInOverflow;
+
   const addItem = (
     <FormDrawer
       trigger={
@@ -149,12 +169,47 @@ export default async function EnquiryWorkspacePage(props: PageProps<"/enquiries/
         }
         actions={
           <>
-            {addItem}
-            <EnquiryQuotationActions enquiryId={id} quotations={quotations} confirmedCount={counts.confirmed} archived={archived} />
+            {primaryAction}
             <EnquiryStatusControl enquiryId={id} status={enquiry.status} />
-            <ArchiveEnquiryControl enquiryId={id} archived={archived} />
+            {addItem}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon-sm" aria-label="More actions" title="More actions">
+                  <MoreHorizontal aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                {quotationNav.overflowQuotations.map((quotation) => (
+                  <DropdownMenuItem key={quotation.id} asChild>
+                    <Link href={`/quotations/${quotation.id}`} className="flex w-full items-center gap-1.5">
+                      <FileText aria-hidden /> <span className="truncate">{quotationLinkLabel(quotation)}</span>
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+                {quotationNav.showCreateInOverflow ? (
+                  <div className="px-1.5 py-1">
+                    <CreateQuotationButton enquiryId={id} disabled={counts.confirmed === 0} disabledTitle="Confirm at least one requirement first" />
+                  </div>
+                ) : null}
+                {hasOverflowQuotationItems ? <DropdownMenuSeparator /> : null}
+                <div className="px-1.5 py-1">
+                  <ArchiveEnquiryControl enquiryId={id} archived={archived} />
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         }
+      />
+
+      <RecordHeader
+        eyebrow={reference(enquiry.number)}
+        title={who}
+        subline={[
+          ENQUIRY_STATUS_LABEL[enquiry.status],
+          ENQUIRY_PRIORITY_LABEL[enquiry.priority],
+          EVIDENCE_CHANNEL_LABEL[enquiry.evidenceSource.channel],
+          `Received ${formatRelativeAge(enquiry.evidenceSource.observedAt, new Date())}`,
+        ].join(" · ")}
       />
 
       {suggestions.length || requiredByText ? <SuggestionsStrip enquiryId={id} suggestions={archived ? [] : suggestions} requiredByText={requiredByText} /> : null}
