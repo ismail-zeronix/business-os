@@ -30,7 +30,6 @@ export type EnquiryHeaderInitial = {
   deliveryLocation: string | null;
   blocker: string | null;
   nextAction: string | null;
-  assignedToId: string | null;
   notes: string | null;
 };
 
@@ -38,7 +37,7 @@ export type EnquiryHeaderInitial = {
  * Edits the operational fields of an enquiry: who, how urgent, by when, delivery, what is blocking it and what happens next.
  * The requester fields are always submitted so that saving never silently erases who wrote in.
  */
-export function EnquiryHeaderForm({ enquiry, customers, contacts, owners }: { enquiry: EnquiryHeaderInitial; customers: SelectOption[]; contacts: ContactOption[]; owners: SelectOption[] }) {
+export function EnquiryHeaderForm({ enquiry, customers, contacts }: { enquiry: EnquiryHeaderInitial; customers: SelectOption[]; contacts: ContactOption[] }) {
   const close = useDrawerClose();
   const [customerId, setCustomerId] = useState<string | null>(enquiry.customerId);
   const [state, formAction] = useActionState(updateEnquiryHeaderAction, null);
@@ -86,9 +85,6 @@ export function EnquiryHeaderForm({ enquiry, customers, contacts, owners }: { en
         </Field>
         <Field label="Delivery location" htmlFor="ehf-delivery" error={err("deliveryLocation")}>
           <Input id="ehf-delivery" name="deliveryLocation" defaultValue={text("deliveryLocation")} />
-        </Field>
-        <Field label="Owner" htmlFor="ehf-owner" error={err("assignedToId")}>
-          <SelectField id="ehf-owner" name="assignedToId" noneLabel="Unassigned" defaultValue={fieldValue(state, "assignedToId", enquiry.assignedToId) || null} options={owners} />
         </Field>
         <Field label="Blocker" htmlFor="ehf-blocker" error={err("blocker")} hint="What is stopping a response right now?" className="col-span-2">
           <Input id="ehf-blocker" name="blocker" defaultValue={text("blocker")} />
