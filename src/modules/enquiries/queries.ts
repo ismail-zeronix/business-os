@@ -44,6 +44,7 @@ export type EnquiryListRow = {
   /** Descriptions of the first two requirements, for the "Requirement" column. */
   requirements: string[];
   counts: { total: number; pending: number; confirmed: number; ignored: number };
+  assignedTo: { id: string; name: string } | null;
 };
 
 /** Statuses that mean the enquiry is finished: it no longer "needs attention". */
@@ -127,6 +128,7 @@ export async function listEnquiries(params: EnquiryListParams, currentUserId?: s
         requesterEmail: true,
         subject: true,
         customer: { select: { name: true } },
+        assignedTo: { select: { id: true, name: true } },
         evidenceSource: { select: { observedAt: true, channel: true } },
         items: { orderBy: { position: "asc" }, select: { reviewStatus: true, description: true, modelText: true } },
       },
@@ -154,6 +156,7 @@ export async function listEnquiries(params: EnquiryListParams, currentUserId?: s
         confirmed: e.items.filter((i) => i.reviewStatus === "CONFIRMED").length,
         ignored: e.items.filter((i) => i.reviewStatus === "IGNORED").length,
       },
+      assignedTo: e.assignedTo ? { id: e.assignedTo.id, name: e.assignedTo.name } : null,
     })),
   };
 }
