@@ -12,6 +12,8 @@ import { isEnquiryItemReady } from "./readiness";
 export type EnquiryView = "attention" | "new" | "sourcing" | "waiting" | "quote" | "all" | "archived";
 export const ENQUIRY_VIEWS: readonly EnquiryView[] = ["attention", "new", "sourcing", "waiting", "quote", "all", "archived"];
 
+export type EnquiryAssigneeFilter = "all" | "mine" | "unassigned";
+
 export type EnquiryListParams = {
   view: EnquiryView;
   page: number;
@@ -21,6 +23,8 @@ export type EnquiryListParams = {
   statuses?: EnquiryStatus[];
   priorities?: EnquiryPriority[];
   channels?: EvidenceChannel[];
+  /** Who it's assigned to (Enquiry.assignedToId) - attribution only. "mine" needs the caller's id, passed separately to listEnquiries/countEnquiriesByView (not part of the URL-derived params so it can never be spoofed via a query string). */
+  assignee?: EnquiryAssigneeFilter;
 };
 
 /** The part of the list filter that is independent of the tab: search, customer and the three pill filters. */
@@ -65,7 +69,7 @@ export function viewWhere(view: EnquiryView): Prisma.EnquiryWhereInput {
 }
 
 /** Search, customer and pill filters as one where-clause. Shared by the list and by the per-tab counts so both always agree. */
-function filterWhere(params: FilterParams): Prisma.EnquiryWhereInput {
+function filterWhere(params: FilterParams, currentUserId?: string): Prisma.EnquiryWhereInput {
   const q = params.q?.trim();
   const contains = (value: string) => ({ contains: escapeLike(value), mode: "insensitive" as const });
   const number = q ? /^ENQ-?0*(\d+)$/i.exec(q)?.[1] : undefined;
@@ -76,6 +80,8 @@ function filterWhere(params: FilterParams): Prisma.EnquiryWhereInput {
       params.statuses?.length ? { status: { in: params.statuses } } : {},
       params.priorities?.length ? { priority: { in: params.priorities } } : {},
       params.channels?.length ? { evidenceSource: { channel: { in: params.channels } } } : {},
+      params.assignee === "unassigned" ? { assignedToId: null } : {},
+      params.assignee === "mine" ? { assignedToId: currentUserId ?? "__none__" } : {},
       q
         ? {
             OR: [
@@ -96,15 +102,15 @@ function filterWhere(params: FilterParams): Prisma.EnquiryWhereInput {
  * How many enquiries each tab would show with the current search and filters applied. The numbers on the tabs therefore always match
  * what a click will list. One count per tab, run in parallel.
  */
-export async function countEnquiriesByView(params: FilterParams): Promise<Record<EnquiryView, number>> {
-  const filters = filterWhere(params);
+export async function countEnquiriesByView(params: FilterParams, currentUserId?: string): Promise<Record<EnquiryView, number>> {
+  const filters = filterWhere(params, currentUserId);
   const counts = await Promise.all(ENQUIRY_VIEWS.map((view) => db.enquiry.count({ where: { AND: [viewWhere(view), filters] } })));
   return Object.fromEntries(ENQUIRY_VIEWS.map((view, index) => [view, counts[index]!])) as Record<EnquiryView, number>;
 }
 
 /** Server-side filtered, paginated enquiry list, newest request first (by when the customer sent it). */
-export async function listEnquiries(params: EnquiryListParams): Promise<{ rows: EnquiryListRow[]; total: number }> {
-  const where: Prisma.EnquiryWhereInput = { AND: [viewWhere(params.view), filterWhere(params)] };
+export async function listEnquiries(params: EnquiryListParams, currentUserId?: string): Promise<{ rows: EnquiryListRow[]; total: number }> {
+  const where: Prisma.EnquiryWhereInput = { AND: [viewWhere(params.view), filterWhere(params, currentUserId)] };
 
   const [enquiries, total] = await Promise.all([
     db.enquiry.findMany({

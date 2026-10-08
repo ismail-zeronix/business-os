@@ -46,10 +46,10 @@ const EMPTY: Record<EnquiryView, { title: string; description: string }> = {
   archived: { title: "No archived enquiries", description: "Archived enquiries appear here. Nothing is ever deleted." },
 };
 
-const FILTER_KEYS = ["q", "status", "priority", "source", "customer"] as const;
+const FILTER_KEYS = ["q", "status", "priority", "source", "customer", "assignee"] as const;
 
 export default async function EnquiriesPage(props: PageProps<"/enquiries">) {
-  await requireActor();
+  const actor = await requireActor();
   const searchParams = await props.searchParams;
   const emailMode = firstParam(searchParams, "view") === "email";
   const params = parseEnquiryFilters(searchParams);
@@ -64,7 +64,7 @@ export default async function EnquiriesPage(props: PageProps<"/enquiries">) {
 
   // Tab links carry the current search and filters (enquiry tabs only). The Email tab starts clean: its filters are different.
   const carried: SearchParams = emailMode ? {} : Object.fromEntries(FILTER_KEYS.map((key) => [key, searchParams[key]]));
-  const [counts, triageCount] = await Promise.all([countEnquiriesByView(params), countEmailTriage()]);
+  const [counts, triageCount] = await Promise.all([countEnquiriesByView(params, actor.id), countEmailTriage()]);
   const tabs: PanelTab[] = [
     ...TABS.map((tab) => ({ key: tab.key, label: tab.label, icon: tab.icon, attention: tab.attention, count: counts[tab.key], href: buildHref("/enquiries", carried, { view: tab.key === "attention" ? undefined : tab.key }) })),
     { key: "email", label: "Email", icon: Mail, attention: true, count: triageCount, href: "/enquiries?view=email" },
@@ -85,9 +85,10 @@ export default async function EnquiriesPage(props: PageProps<"/enquiries">) {
 
 async function EnquiryList({ searchParams, newEnquiry }: { searchParams: SearchParams; newEnquiry: React.ReactNode }) {
   const params = parseEnquiryFilters(searchParams);
-  const [{ rows, total }, customers] = await Promise.all([listEnquiries(params), listCustomerOptions()]);
+  const actor = await getCurrentActor();
+  const [{ rows, total }, customers] = await Promise.all([listEnquiries(params, actor.id), listCustomerOptions()]);
   const filtered = hasActiveEnquiryFilters(params);
-  const clearHref = buildHref("/enquiries", searchParams, { q: undefined, status: undefined, priority: undefined, source: undefined, customer: undefined, page: undefined });
+  const clearHref = buildHref("/enquiries", searchParams, { q: undefined, status: undefined, priority: undefined, source: undefined, customer: undefined, assignee: undefined, page: undefined });
   const peekHref = (id: string) => buildHref("/enquiries", searchParams, { peek: id });
 
   return (
@@ -98,6 +99,17 @@ async function EnquiryList({ searchParams, newEnquiry }: { searchParams: SearchP
         <FilterPill param="priority" label="Priority" options={(["URGENT", "HIGH", "NORMAL", "LOW"] as const).map((value) => ({ value, label: ENQUIRY_PRIORITY_LABEL[value], tone: ENQUIRY_PRIORITY_TONE[value] }))} />
         <FilterPill param="source" label="Source" options={toOptions(EVIDENCE_CHANNEL_LABEL)} />
         <FilterPill param="customer" label="Customer" mode="single" options={customers} searchable />
+        <FilterPill
+          param="assignee"
+          label="Assigned"
+          mode="single"
+          defaultValue="all"
+          options={[
+            { value: "all", label: "Anyone" },
+            { value: "mine", label: "Assigned to me" },
+            { value: "unassigned", label: "Unassigned" },
+          ]}
+        />
         {filtered ? (
           <Button asChild variant="ghost" size="sm" className="rounded-lg text-muted-foreground">
             <Link href={clearHref}>
