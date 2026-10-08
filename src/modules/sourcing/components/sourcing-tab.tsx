@@ -15,8 +15,8 @@ import { listContactOptions, listSupplierOptions } from "@/modules/suppliers/que
 import { buildRequestMessage } from "../message";
 import { getSupplierSuggestions, listDecisionsForEnquiry, listRequestsForEnquiry, type SupplierRequestRow } from "../queries";
 import { AddSupplierForm } from "./add-supplier-form";
-import { CompareTable, type CompareColumn } from "./compare-table";
 import { RequestMessageDrawer } from "./message-drawer";
+import { SourcingMatchTable } from "./sourcing-match-table";
 import { OutcomeButton, RemoveRequestButton, ReopenRequestButton } from "./request-actions";
 
 const replyHref = (request: SupplierRequestRow) => `/broadcasts/new?supplier=${request.supplier.id}&request=${request.id}`;
@@ -53,14 +53,9 @@ export async function SourcingTab({ enquiry, evidenceHref }: { enquiry: EnquiryD
   const waiting = requests.filter((r) => r.status === "SENT").length;
   const replied = requests.filter((r) => r.status === "REPLIED").length;
 
-  // Matching suppliers: everyone already on the enquiry, plus anyone with a known price/stock for a linked product who
-  // was never added — so a known match can be chosen directly, without going through Add supplier first.
-  const matchedOnly = new Map<string, string>();
-  for (const rows of intelligence.values()) for (const row of rows) if (!askedIds.has(row.supplierId)) matchedOnly.set(row.supplierId, row.supplierName);
-  const columns: CompareColumn[] = [
-    ...requests.map((r) => ({ supplierId: r.supplier.id, supplierName: r.supplier.name, status: r.status })),
-    ...[...matchedOnly].map(([supplierId, supplierName]) => ({ supplierId, supplierName, status: null })),
-  ];
+  // The status of each supplier already asked on this enquiry — used only to gate "Marked No stock/Declined" in the
+  // match table below; suppliers matched purely from price/stock history (never asked) have no entry here.
+  const requestStatusBySupplier = new Map(requests.map((r) => [r.supplier.id, r.status]));
 
   const addSupplier = (
     <FormDrawer
@@ -108,8 +103,8 @@ export async function SourcingTab({ enquiry, evidenceHref }: { enquiry: EnquiryD
         </p>
       ) : null}
 
-      {columns.length > 0 && lines.length > 0 ? (
-        <CompareTable lines={lines} columns={columns} intelligence={intelligence} decisions={decisions} evidenceHref={evidenceHref} archived={archived} now={now} />
+      {lines.length > 0 ? (
+        <SourcingMatchTable lines={lines} intelligence={intelligence} decisions={decisions} requestStatusBySupplier={requestStatusBySupplier} evidenceHref={evidenceHref} archived={archived} now={now} />
       ) : null}
 
       {requests.length === 0 ? (
