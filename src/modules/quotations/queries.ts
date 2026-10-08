@@ -31,6 +31,9 @@ export type QuotationListRow = {
   updatedAt: Date;
   /** NULL for a manual quotation. */
   enquiry: { id: string; number: number } | null;
+  /** The linked customer's owner (Customer.ownerId), for display only - never used to filter this list. */
+  ownerId: string | null;
+  ownerName: string | null;
   lineCount: number;
   /** Total including VAT, "5644.88". Lines still missing a quantity or price are left out of it. */
   total: string;
@@ -87,6 +90,7 @@ export async function listQuotations(params: QuotationListParams, actor: OwnerAc
         validUntil: true,
         updatedAt: true,
         enquiry: { select: { id: true, number: true } },
+        customer: { select: { owner: { select: { id: true, name: true } } } },
         lines: { select: { quantity: true, unitPrice: true } },
       },
     }),
@@ -105,6 +109,8 @@ export async function listQuotations(params: QuotationListParams, actor: OwnerAc
       validUntil: quotation.validUntil,
       updatedAt: quotation.updatedAt,
       enquiry: quotation.enquiry,
+      ownerId: quotation.customer?.owner?.id ?? null,
+      ownerName: quotation.customer?.owner?.name ?? null,
       lineCount: quotation.lines.length,
       total: totals.total,
       incompleteLines: totals.incompleteLines,

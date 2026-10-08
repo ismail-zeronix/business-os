@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { InitialsAvatar } from "@/components/application/soft-pill";
 import { QuotationStatusPill } from "@/components/application/status-badges";
 import { Unknown } from "@/components/application/states";
 import { TableShell } from "@/components/data-table/table-shell";
@@ -18,6 +19,7 @@ export function QuotationsTable({ rows }: { rows: QuotationListRow[] }) {
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-36">Quotation</TableHead>
             <TableHead>Customer</TableHead>
+            <TableHead className="w-40">Owner</TableHead>
             <TableHead className="w-28">Enquiry</TableHead>
             <TableHead className="w-28">Status</TableHead>
             <TableHead className="w-16 text-right">Lines</TableHead>
@@ -35,6 +37,16 @@ export function QuotationsTable({ rows }: { rows: QuotationListRow[] }) {
                 </Link>
               </TableCell>
               <TableCell>{row.customerName ? <span className="block truncate">{row.customerName}</span> : <Unknown dash />}</TableCell>
+              <TableCell>
+                {row.ownerName ? (
+                  <div className="flex items-center gap-2">
+                    <InitialsAvatar name={row.ownerName} size={24} />
+                    <span className="truncate text-xs">{row.ownerName}</span>
+                  </div>
+                ) : (
+                  <Unknown dash />
+                )}
+              </TableCell>
               <TableCell className="relative z-10">
                 {row.enquiry ? (
                   <Link href={`/enquiries/${row.enquiry.id}`} className="font-mono text-xs text-muted-foreground hover:underline">
