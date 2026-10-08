@@ -4,6 +4,7 @@ import { SoftPill, type PillTone } from "@/components/application/soft-pill";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime, formatRelativeAge } from "@/lib/format";
 import { getFreshnessBand, type FreshnessBand } from "@/lib/freshness";
+import { cn } from "@/lib/utils";
 import {
   CONFIDENCE_LABEL,
   EMAIL_BAND_LABEL,
@@ -196,6 +197,33 @@ export function InvoiceStatusPill({ status }: { status: InvoiceStatus }) {
     <SoftPill tone={INVOICE_STATUS_TONE[status]} dot>
       {INVOICE_STATUS_LABEL[status]}
     </SoftPill>
+  );
+}
+
+/**
+ * How far a broadcast's review has got, for the PageHeader `meta` slot: a thin bar of reviewed / total plus the count,
+ * sized to sit comfortably next to the other `meta` SoftPills (e.g. the `{counts.pending} pending` pill on the Broadcast
+ * review page). Same visual idea as enquiries-table.tsx's row-scoped `Progress` helper, but exported and differently
+ * typed for this navbar use case — that one stays private to its table and is not reused here.
+ */
+export function ReviewProgressPill({ counts }: { counts: { total: number; pending: number; confirmed: number; ignored: number } }) {
+  if (counts.total === 0) return <span className="text-xs text-muted-foreground">—</span>;
+  const reviewed = counts.confirmed + counts.ignored;
+  return (
+    <div
+      className="flex h-6 items-center gap-1.5 text-xs text-muted-foreground"
+      title={`${counts.confirmed} confirmed, ${counts.ignored} ignored, ${counts.pending} pending`}
+    >
+      <span aria-hidden className="h-1.5 w-12 overflow-hidden rounded-full bg-muted">
+        <span
+          className={cn("block h-full rounded-full", counts.pending === 0 ? "bg-emerald-500" : "bg-brand")}
+          style={{ width: `${Math.round((reviewed / counts.total) * 100)}%` }}
+        />
+      </span>
+      <span className="num">
+        {reviewed}/{counts.total} reviewed
+      </span>
+    </div>
   );
 }
 
