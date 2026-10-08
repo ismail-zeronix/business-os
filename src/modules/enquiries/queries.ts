@@ -1,6 +1,7 @@
 import { db } from "../../core/database/client";
 import type { Prisma } from "../../generated/prisma/client";
 import type { EnquiryPriority, EnquiryStatus, EvidenceChannel } from "../../generated/prisma/enums";
+import { formatRelativeAge } from "../../lib/format";
 import { escapeLike } from "../../lib/like";
 import { PAGE_SIZE } from "../../lib/search-params";
 import { findMatchCandidates } from "../products/matching";
@@ -25,6 +26,8 @@ export type EnquiryListParams = {
   channels?: EvidenceChannel[];
   /** Who it's assigned to (Enquiry.assignedToId) - attribution only. "mine" needs the caller's id, passed separately to listEnquiries/countEnquiriesByView (not part of the URL-derived params so it can never be spoofed via a query string). */
   assignee?: EnquiryAssigneeFilter;
+  /** Only meaningful when view === "all": also include archived enquiries (selected via the Status filter's "Archived" option) instead of the view's default archivedAt: null. */
+  includeArchived?: boolean;
 };
 
 /** The part of the list filter that is independent of the tab: search, customer and the three pill filters. */
@@ -45,6 +48,10 @@ export type EnquiryListRow = {
   requirements: string[];
   counts: { total: number; pending: number; confirmed: number; ignored: number };
   assignedTo: { id: string; name: string } | null;
+  /** Raw free-text next action (Enquiry.nextAction), kept for potential reuse beyond the table. */
+  nextAction: string | null;
+  /** What the "Next action" column renders: an explicit nextAction if set, otherwise a status-derived hint. null = nothing to show. */
+  nextActionDisplay: ReturnType<typeof deriveNextAction>;
 };
 
 /** Statuses that mean the enquiry is finished: it no longer "needs attention". */
@@ -105,13 +112,39 @@ function filterWhere(params: FilterParams, currentUserId?: string): Prisma.Enqui
  */
 export async function countEnquiriesByView(params: FilterParams, currentUserId?: string): Promise<Record<EnquiryView, number>> {
   const filters = filterWhere(params, currentUserId);
-  const counts = await Promise.all(ENQUIRY_VIEWS.map((view) => db.enquiry.count({ where: { AND: [viewWhere(view), filters] } })));
+  const counts = await Promise.all(
+    ENQUIRY_VIEWS.map((view) => db.enquiry.count({ where: { AND: [view === "all" && params.includeArchived ? {} : viewWhere(view), filters] } })),
+  );
   return Object.fromEntries(ENQUIRY_VIEWS.map((view, index) => [view, counts[index]!])) as Record<EnquiryView, number>;
+}
+
+/**
+ * The "Next action" column's value: an explicit free-text Enquiry.nextAction wins when set, otherwise a status-derived hint computed
+ * from the enquiry's own state (never fabricated — null means nothing to show). Pure function so it stays easy to test later.
+ */
+export function deriveNextAction(
+  row: { status: EnquiryStatus; nextAction: string | null; items: { reviewStatus: string; productId: string | null }[]; supplierRequests: { status: string; sentAt: Date | null }[] },
+  now: Date,
+): { label: string; tone: "amber" | "green" | "violet" | "neutral" } | null {
+  if (row.nextAction) return { label: row.nextAction, tone: "neutral" };
+  if (row.status === "WAITING_SUPPLIER") {
+    if (row.supplierRequests.some((r) => r.status === "REPLIED")) return { label: "Supplier replied", tone: "green" };
+    const sent = row.supplierRequests.filter((r) => r.status === "SENT" && r.sentAt).sort((a, b) => a.sentAt!.getTime() - b.sentAt!.getTime())[0];
+    if (sent?.sentAt) return { label: `Waiting ${formatRelativeAge(sent.sentAt, now)}`, tone: "violet" };
+  }
+  if (row.status === "SOURCING") {
+    const unmatched = row.items.filter((i) => i.reviewStatus === "CONFIRMED" && i.productId === null).length;
+    if (unmatched > 0) return { label: `${unmatched} unmatched`, tone: "amber" };
+  }
+  if (row.status === "NEW") return { label: "Needs triage", tone: "amber" };
+  if (row.status === "QUOTATION_READY") return { label: "Ready to quote", tone: "green" };
+  return null;
 }
 
 /** Server-side filtered, paginated enquiry list, newest request first (by when the customer sent it). */
 export async function listEnquiries(params: EnquiryListParams, currentUserId?: string): Promise<{ rows: EnquiryListRow[]; total: number }> {
-  const where: Prisma.EnquiryWhereInput = { AND: [viewWhere(params.view), filterWhere(params, currentUserId)] };
+  const baseView = params.view === "all" && params.includeArchived ? {} : viewWhere(params.view);
+  const where: Prisma.EnquiryWhereInput = { AND: [baseView, filterWhere(params, currentUserId)] };
 
   const [enquiries, total] = await Promise.all([
     db.enquiry.findMany({
@@ -127,15 +160,18 @@ export async function listEnquiries(params: EnquiryListParams, currentUserId?: s
         requesterName: true,
         requesterEmail: true,
         subject: true,
+        nextAction: true,
         customer: { select: { name: true } },
         assignedTo: { select: { id: true, name: true } },
         evidenceSource: { select: { observedAt: true, channel: true } },
-        items: { orderBy: { position: "asc" }, select: { reviewStatus: true, description: true, modelText: true } },
+        items: { orderBy: { position: "asc" }, select: { reviewStatus: true, description: true, modelText: true, productId: true } },
+        supplierRequests: { select: { status: true, sentAt: true } },
       },
     }),
     db.enquiry.count({ where }),
   ]);
 
+  const now = new Date();
   return {
     total,
     rows: enquiries.map((e) => ({
@@ -157,6 +193,8 @@ export async function listEnquiries(params: EnquiryListParams, currentUserId?: s
         ignored: e.items.filter((i) => i.reviewStatus === "IGNORED").length,
       },
       assignedTo: e.assignedTo ? { id: e.assignedTo.id, name: e.assignedTo.name } : null,
+      nextAction: e.nextAction,
+      nextActionDisplay: deriveNextAction({ status: e.status, nextAction: e.nextAction, items: e.items, supplierRequests: e.supplierRequests }, now),
     })),
   };
 }

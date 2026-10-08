@@ -17,19 +17,26 @@ function listOf<T extends string>(members: Record<string, T>, value: string | un
 export function parseEnquiryFilters(searchParams: SearchParams): EnquiryListParams {
   const requested = firstParam(searchParams, "view");
   const assignee = firstParam(searchParams, "assignee");
+  // "ARCHIVED" is a sentinel inside the same `status` param, not a real EnquiryStatus - listOf() below silently drops it (it is never
+  // a member of the EnquiryStatus enum), so it can never leak into a Prisma where clause. It only ever flips includeArchived.
+  const rawStatus = firstParam(searchParams, "status") ?? "";
+  const includeArchived = rawStatus.split(",").map((v) => v.trim()).includes("ARCHIVED");
   return {
     view: (ENQUIRY_VIEWS as readonly string[]).includes(requested ?? "") ? (requested as EnquiryView) : "attention",
     q: firstParam(searchParams, "q"),
     customerId: isUuid(firstParam(searchParams, "customer")),
-    statuses: listOf(EnquiryStatus, firstParam(searchParams, "status")),
+    statuses: listOf(EnquiryStatus, rawStatus),
     priorities: listOf(EnquiryPriority, firstParam(searchParams, "priority")),
     channels: listOf(EvidenceChannel, firstParam(searchParams, "source")),
     assignee: (ASSIGNEES as readonly string[]).includes(assignee ?? "") ? (assignee as EnquiryAssigneeFilter) : "all",
+    includeArchived,
     page: parsePage(searchParams),
   };
 }
 
 /** True when any search or filter (not the tab or page) is set, so the UI can offer "Clear". */
 export function hasActiveEnquiryFilters(params: EnquiryListParams): boolean {
-  return Boolean(params.q || params.customerId || params.statuses?.length || params.priorities?.length || params.channels?.length || (params.assignee && params.assignee !== "all"));
+  return Boolean(
+    params.q || params.customerId || params.statuses?.length || params.priorities?.length || params.channels?.length || (params.assignee && params.assignee !== "all") || params.includeArchived,
+  );
 }
