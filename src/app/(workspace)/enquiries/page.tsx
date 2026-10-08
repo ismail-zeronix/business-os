@@ -1,10 +1,10 @@
 import { getCurrentActor, requireActor } from "@/core/permissions/actor";
-import { Archive, CircleAlert, FileCheck2, Hourglass, Inbox, List, Mail, Plus, Search, X } from "lucide-react";
+import { CircleAlert, FileCheck2, Hourglass, List, Mail, Plus, Search, X } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Panel } from "@/components/application/page-canvas";
 import { PageHeader } from "@/components/application/page-header";
-import { PanelTabs, type PanelTab } from "@/components/application/panel-tabs";
+import { PanelTabs, TabCount, type PanelTab } from "@/components/application/panel-tabs";
 import { ENQUIRY_PRIORITY_TONE, ENQUIRY_STATUS_TONE } from "@/components/application/status-badges";
 import { TopbarActions } from "@/components/application/topbar-slot";
 import { FilterPill } from "@/components/data-table/filter-pill";
@@ -27,13 +27,11 @@ import { countEnquiriesByView, listEnquiries, type EnquiryView } from "@/modules
 export const metadata: Metadata = { title: "Enquiries" };
 
 const TABS: { key: EnquiryView; label: string; icon: PanelTab["icon"]; attention?: boolean }[] = [
-  { key: "attention", label: "Needs attention", icon: CircleAlert, attention: true },
-  { key: "new", label: "New", icon: Inbox },
+  { key: "attention", label: "Inbox", icon: CircleAlert, attention: true },
   { key: "sourcing", label: "Sourcing", icon: Search },
-  { key: "waiting", label: "Waiting supplier", icon: Hourglass },
-  { key: "quote", label: "Quote ready", icon: FileCheck2 },
+  { key: "waiting", label: "Waiting", icon: Hourglass },
+  { key: "quote", label: "Ready to quote", icon: FileCheck2 },
   { key: "all", label: "All", icon: List },
-  { key: "archived", label: "Archived", icon: Archive },
 ];
 
 const EMPTY: Record<EnquiryView, { title: string; description: string }> = {
@@ -65,14 +63,29 @@ export default async function EnquiriesPage(props: PageProps<"/enquiries">) {
   // Tab links carry the current search and filters (enquiry tabs only). The Email tab starts clean: its filters are different.
   const carried: SearchParams = emailMode ? {} : Object.fromEntries(FILTER_KEYS.map((key) => [key, searchParams[key]]));
   const [counts, triageCount] = await Promise.all([countEnquiriesByView(params, actor.id), countEmailTriage()]);
-  const tabs: PanelTab[] = [
-    ...TABS.map((tab) => ({ key: tab.key, label: tab.label, icon: tab.icon, attention: tab.attention, count: counts[tab.key], href: buildHref("/enquiries", carried, { view: tab.key === "attention" ? undefined : tab.key }) })),
-    { key: "email", label: "Email", icon: Mail, attention: true, count: triageCount, href: "/enquiries?view=email" },
-  ];
+  const tabs: PanelTab[] = TABS.map((tab) => ({ key: tab.key, label: tab.label, icon: tab.icon, attention: tab.attention, count: counts[tab.key], href: buildHref("/enquiries", carried, { view: tab.key === "attention" ? undefined : tab.key }) }));
+
+  const emailIntake = (
+    <Button asChild variant="outline" size="sm">
+      <Link href="/enquiries?view=email">
+        <Mail aria-hidden /> Email intake
+        {triageCount > 0 ? <TabCount count={triageCount} attention selected /> : null}
+      </Link>
+    </Button>
+  );
 
   return (
     <>
-      <PageHeader title="Enquiries" subtitle="What customers need, what we already know, and what is blocking a reply." actions={newEnquiry} />
+      <PageHeader
+        title="Enquiries"
+        subtitle="What customers need, what we already know, and what is blocking a reply."
+        actions={
+          <>
+            {emailIntake}
+            {newEnquiry}
+          </>
+        }
+      />
       <Panel flush>
         <PanelTabs tabs={tabs} active={emailMode ? "email" : params.view} label="Enquiry views" />
         {emailMode ? <EmailTriage searchParams={searchParams} /> : <EnquiryList searchParams={searchParams} newEnquiry={newEnquiry} />}
@@ -95,7 +108,14 @@ async function EnquiryList({ searchParams, newEnquiry }: { searchParams: SearchP
     <>
       <div className="flex flex-wrap items-center gap-2 px-4 py-3">
         <SearchInput placeholder="Search enquiries" className="w-72"  />
-        <FilterPill param="status" label="Status" options={ENQUIRY_STATUS_ORDER.map((value) => ({ value, label: ENQUIRY_STATUS_LABEL[value], tone: ENQUIRY_STATUS_TONE[value] }))} />
+        <FilterPill
+          param="status"
+          label="Status"
+          options={[
+            ...ENQUIRY_STATUS_ORDER.map((value) => ({ value, label: ENQUIRY_STATUS_LABEL[value], tone: ENQUIRY_STATUS_TONE[value] })),
+            ...(params.view === "all" ? [{ value: "ARCHIVED", label: "Archived" }] : []),
+          ]}
+        />
         <FilterPill param="priority" label="Priority" options={(["URGENT", "HIGH", "NORMAL", "LOW"] as const).map((value) => ({ value, label: ENQUIRY_PRIORITY_LABEL[value], tone: ENQUIRY_PRIORITY_TONE[value] }))} />
         <FilterPill param="source" label="Source" options={toOptions(EVIDENCE_CHANNEL_LABEL)} />
         <FilterPill param="customer" label="Customer" mode="single" options={customers} searchable />

@@ -2,7 +2,7 @@ import { PanelRight } from "lucide-react";
 import Link from "next/link";
 import { EmptyState } from "@/components/application/states";
 import { EnquiryStatusPill, PriorityPill } from "@/components/application/status-badges";
-import { InitialsAvatar } from "@/components/application/soft-pill";
+import { InitialsAvatar, SoftPill } from "@/components/application/soft-pill";
 import { TableShell } from "@/components/data-table/table-shell";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDateTime, formatRelativeAge } from "@/lib/format";
@@ -58,12 +58,13 @@ export function EnquiriesTable({ rows, showCustomer = true, bare = false, peekHr
     <Table>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          <TableHead className="h-10 w-[22%] bg-transparent px-4">{showCustomer ? "Customer" : "Enquiry"}</TableHead>
-          <TableHead className="h-10 w-[23%] bg-transparent px-4">Requirement</TableHead>
-          <TableHead className="h-10 w-[12%] bg-transparent px-4">Review</TableHead>
-          <TableHead className="h-10 w-[11%] bg-transparent px-4">Status</TableHead>
-          <TableHead className="h-10 w-[8%] bg-transparent px-4">Priority</TableHead>
-          <TableHead className="h-10 w-[10%] bg-transparent px-4">Assigned to</TableHead>
+          <TableHead className="h-10 w-[18%] bg-transparent px-4">{showCustomer ? "Customer" : "Enquiry"}</TableHead>
+          <TableHead className="h-10 w-[18%] bg-transparent px-4">Requirement</TableHead>
+          <TableHead className="h-10 w-[14%] bg-transparent px-4">Next action</TableHead>
+          <TableHead className="h-10 w-[10%] bg-transparent px-4">Review</TableHead>
+          <TableHead className="h-10 w-[10%] bg-transparent px-4">Status</TableHead>
+          <TableHead className="h-10 w-[7%] bg-transparent px-4">Priority</TableHead>
+          <TableHead className="h-10 w-[9%] bg-transparent px-4">Assigned to</TableHead>
           <TableHead className="h-10 w-[9%] bg-transparent px-4 text-right">Age</TableHead>
           {peekHref ? <TableHead className="h-10 w-[5%] min-w-12 bg-transparent px-2" aria-label="Quick view" /> : null}
         </TableRow>
@@ -93,6 +94,9 @@ export function EnquiriesTable({ rows, showCustomer = true, bare = false, peekHr
               </TableCell>
               <TableCell className="px-4 py-2">
                 <Requirement row={row} />
+              </TableCell>
+              <TableCell className="px-4 py-2">
+                {row.nextActionDisplay ? <SoftPill tone={row.nextActionDisplay.tone}>{row.nextActionDisplay.label}</SoftPill> : <span className="text-muted-foreground">—</span>}
               </TableCell>
               <TableCell className="px-4 py-2">
                 <Progress counts={row.counts} />
