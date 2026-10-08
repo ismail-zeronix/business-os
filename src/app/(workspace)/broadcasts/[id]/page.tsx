@@ -7,10 +7,12 @@ import { z } from "zod";
 import { PageBody, Panel } from "@/components/application/page-canvas";
 import { PageHeader } from "@/components/application/page-header";
 import { SoftPill } from "@/components/application/soft-pill";
+import { ReviewProgressPill } from "@/components/application/status-badges";
 import { EmptyState } from "@/components/application/states";
 import { Timeline } from "@/components/application/timeline";
 import { TabNav } from "@/components/application/tab-nav";
 import { FormDrawer } from "@/components/forms/form-drawer";
+import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
@@ -25,9 +27,9 @@ import { ItemRow } from "@/modules/broadcasts/components/item-row";
 import { RawPane, type LineRange } from "@/modules/broadcasts/components/raw-pane";
 import { ReviewKeys } from "@/modules/broadcasts/components/review-keys";
 import { getBroadcast, getCandidateSpecs, getItemCandidates, listAwaitingReview } from "@/modules/broadcasts/queries";
+import { recommendReviewMode } from "@/modules/broadcasts/readiness";
 import { enquiryReference } from "@/modules/enquiries/shared";
 import { listBrandOptions, listCategoryOptions } from "@/modules/products/master-data.queries";
-import { Alert } from "@/components/ui/alert";
 
 const FILTERS = ["all", "pending", "confirmed", "ignored"] as const;
 type Filter = (typeof FILTERS)[number];
@@ -49,8 +51,10 @@ export default async function BroadcastReviewPage(props: PageProps<"/broadcasts/
   if (!broadcast) notFound();
 
   const requestedView = firstParam(searchParams, "view");
-  const allUntouched = broadcast.items.length > 1 && broadcast.items.every((i) => i.reviewStatus === "PENDING");
-  const view: "review" | "activity" | "table" = requestedView === "activity" ? "activity" : requestedView === "table" ? "table" : requestedView === "review" ? "review" : allUntouched ? "table" : "review";
+  const pendingItems = broadcast.items.filter((i) => i.reviewStatus === "PENDING");
+  const allUntouched = broadcast.items.length > 1 && pendingItems.length === broadcast.items.length;
+  const recommendedView = allUntouched ? recommendReviewMode(pendingItems) : "review";
+  const view: "review" | "activity" | "table" = requestedView === "activity" ? "activity" : requestedView === "table" ? "table" : requestedView === "review" ? "review" : recommendedView;
   const requestedFilter = firstParam(searchParams, "filter");
   const filter: Filter = (FILTERS as readonly string[]).includes(requestedFilter ?? "") ? (requestedFilter as Filter) : "all";
 
@@ -134,12 +138,14 @@ export default async function BroadcastReviewPage(props: PageProps<"/broadcasts/
                 <SoftPill tone="violet">Reply to {enquiryReference(broadcast.supplierRequest.enquiry.number)}</SoftPill>
               </Link>
             ) : null}
+            <ReviewProgressPill counts={{ total: counts.all, pending: counts.pending, confirmed: counts.confirmed, ignored: counts.ignored }} />
             {counts.pending ? <SoftPill tone="amber">{counts.pending} pending</SoftPill> : null}
           </>
         }
         actions={
           <>
             {addItem}
+            <ConfirmReadyControl broadcastId={id} readyCount={readyCount} keepQuery={keepQuery} />
             <ArchiveBroadcastControl broadcastId={id} archived={Boolean(broadcast.archivedAt)} />
           </>
         }
@@ -225,7 +231,6 @@ export default async function BroadcastReviewPage(props: PageProps<"/broadcasts/
                   </Link>
                 ))}
                 <div className="ml-auto flex items-center gap-3">
-                  <ConfirmReadyControl broadcastId={id} readyCount={readyCount} keepQuery={keepQuery} />
                   <span className="text-[11px] text-muted-foreground">j / k next and previous item</span>
                 </div>
               </div>

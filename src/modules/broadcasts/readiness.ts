@@ -11,3 +11,21 @@ export type ReadinessItem = { productId: string | null; product: { status: strin
 export function isItemReady(item: ReadinessItem): boolean {
   return Boolean(item.productId) && item.product?.status === "ACTIVE";
 }
+
+/**
+ * Which review mode to default to for a broadcast nobody has touched yet: Table is faster when there are enough items
+ * to be worth batching (20-100) and most of them share one category (a repetitive list, e.g. all "RAM"), since the
+ * bulk table lets you move through near-identical rows quickly. Otherwise Review (the line-by-line, evidence-linked
+ * flow) is the safer default — too few items to bother batching, too many to trust a table pass, or a mixed bag where
+ * line-by-line judgement matters more. Pure and DB-shape-agnostic, same style as isItemReady above.
+ */
+export function recommendReviewMode(items: { categoryText: string | null }[]): "table" | "review" {
+  if (items.length < 20 || items.length > 100) return "review";
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const key = (item.categoryText ?? "").trim().toLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const maxCount = Math.max(...counts.values());
+  return maxCount / items.length >= 0.6 ? "table" : "review";
+}
