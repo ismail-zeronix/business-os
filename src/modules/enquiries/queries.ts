@@ -37,6 +37,8 @@ export type EnquiryListRow = {
   observedAt: Date;
   channel: EvidenceChannel;
   customerName: string | null;
+  /** Who this enquiry's sales owner is (Enquiry.assignedToId), for the list's "Assigned" column - attribution only, see owner-control.tsx. */
+  assignedTo: { name: string } | null;
   requesterName: string | null;
   requesterEmail: string | null;
   subject: string | null;
@@ -126,6 +128,7 @@ export async function listEnquiries(params: EnquiryListParams, currentUserId?: s
         requesterEmail: true,
         subject: true,
         customer: { select: { name: true } },
+        assignedTo: { select: { name: true } },
         evidenceSource: { select: { observedAt: true, channel: true } },
         items: { orderBy: { position: "asc" }, select: { reviewStatus: true, description: true, modelText: true } },
       },
@@ -143,6 +146,7 @@ export async function listEnquiries(params: EnquiryListParams, currentUserId?: s
       observedAt: e.evidenceSource.observedAt,
       channel: e.evidenceSource.channel,
       customerName: e.customer?.name ?? null,
+      assignedTo: e.assignedTo,
       requesterName: e.requesterName,
       requesterEmail: e.requesterEmail,
       subject: e.subject,

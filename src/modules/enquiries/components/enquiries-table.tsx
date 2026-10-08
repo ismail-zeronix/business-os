@@ -58,11 +58,12 @@ export function EnquiriesTable({ rows, showCustomer = true, bare = false, peekHr
     <Table>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          <TableHead className="h-10 w-[25%] bg-transparent px-4">{showCustomer ? "Customer" : "Enquiry"}</TableHead>
-          <TableHead className="h-10 w-[27%] bg-transparent px-4">Requirement</TableHead>
-          <TableHead className="h-10 w-[13%] bg-transparent px-4">Review</TableHead>
-          <TableHead className="h-10 w-[12%] bg-transparent px-4">Status</TableHead>
-          <TableHead className="h-10 w-[9%] bg-transparent px-4">Priority</TableHead>
+          <TableHead className="h-10 w-[23%] bg-transparent px-4">{showCustomer ? "Customer" : "Enquiry"}</TableHead>
+          <TableHead className="h-10 w-[24%] bg-transparent px-4">Requirement</TableHead>
+          <TableHead className="h-10 w-[11%] bg-transparent px-4">Review</TableHead>
+          <TableHead className="h-10 w-[11%] bg-transparent px-4">Status</TableHead>
+          <TableHead className="h-10 w-[8%] bg-transparent px-4">Priority</TableHead>
+          <TableHead className="h-10 w-[130px] min-w-[130px] bg-transparent px-4">Assigned</TableHead>
           <TableHead className="h-10 w-[9%] bg-transparent px-4 text-right">Age</TableHead>
           {peekHref ? <TableHead className="h-10 w-[5%] min-w-12 bg-transparent px-2" aria-label="Quick view" /> : null}
         </TableRow>
@@ -101,6 +102,9 @@ export function EnquiriesTable({ rows, showCustomer = true, bare = false, peekHr
               </TableCell>
               <TableCell className="px-4 py-2">
                 <PriorityPill priority={row.priority} />
+              </TableCell>
+              <TableCell className="px-4 py-2">
+                {row.assignedTo ? <span className="truncate text-xs">{row.assignedTo.name}</span> : <span className="text-xs text-muted-foreground">Unassigned</span>}
               </TableCell>
               <TableCell className="num px-4 py-2 text-right text-xs text-muted-foreground" title={formatDateTime(row.observedAt)}>
                 {formatRelativeAge(row.observedAt, now)}
