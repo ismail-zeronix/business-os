@@ -40,8 +40,9 @@
 
   --shadow-float: 0 4px 16px oklch(0 0 0 / 0.08); /* popovers and drawers only */
 
-  /* Design v2 (docs/design/UI_SYSTEM.md). Layers: canvas (the app background) -> white raised panel -> quiet inner surface. */
-  --color-canvas: #ffffff; /* white: the layout background and the top navbar; cards separate themselves with their ring and shadow */
+  /* UI_SYSTEM.md v4. Layers: canvas (the app background, faint green tint) -> white raised panel (--card, explicit white below, so it
+     visibly pops off the tinted canvas) -> quiet inner surface (--surface). */
+  --color-canvas: #f7faf7; /* faint green tint: the page background and the top navbar */
   --shadow-panel: 0 1px 2px oklch(0.3 0.04 160 / 0.04), 0 2px 8px oklch(0.3 0.04 160 / 0.05);
 }
 
@@ -101,8 +102,9 @@
   --popover: #ffffff;
   --popover-foreground: #10241a;
 
-  /* Design v3 (Business OS green). `primary` is the lime call-to-action (dark text on it); `brand` is the mid green for links, active icons,
-     selected chips and the focus ring, because lime text on white is unreadable. */
+  /* UI_SYSTEM.md v4: two brand accents. `brand` (mid green) is the primary-action colour: button fills, links, active icons, selected chips.
+     `primary` (lime, dark text) is reserved for indicators/attention only (sidebar active-state ring, count badges, selected-state chips) and
+     is never used as a button fill — lime text on white is also unreadable, which is the other reason it stays off buttons. */
   --primary: #b4e64e;
   --primary-foreground: #0b3d2a;
   --brand: #2a8a4a;

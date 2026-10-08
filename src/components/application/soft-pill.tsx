@@ -4,15 +4,16 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 /**
- * Design v3: soft "pastel" pill-shaped status chips (shadcn <Badge> with a tone) and initials avatars (shadcn <Avatar>). Safe in server and client
+ * Soft "pastel" pill-shaped status chips (shadcn <Badge> with a tone) and initials avatars (shadcn <Avatar>). Safe in server and client
  * trees. Every colour class is written out in full so Tailwind can see it. The meaning of each tone lives in one place per domain (see
- * status-badges.tsx), never here.
+ * status-badges.tsx), never here. Tone names match the colour they render (docs/design/UI_SYSTEM.md section 6) — `blue` is a real sky/blue
+ * tint and `indigo` a real indigo tint, not the mislabelled lime/emerald they rendered before v4.
  */
 
 export type PillTone = "neutral" | "amber" | "orange" | "red" | "rose" | "green" | "teal" | "sky" | "blue" | "indigo" | "violet";
 
 const TONE: Record<PillTone, { pill: string; dot: string; avatar: string }> = {
-  neutral: { pill: "bg-muted text-foreground/70", dot: "bg-zinc-400", avatar: "bg-muted text-muted-foreground" },
+  neutral: { pill: "bg-muted text-foreground/70", dot: "bg-muted-foreground", avatar: "bg-muted text-muted-foreground" },
   amber: { pill: "bg-amber-100 text-amber-900", dot: "bg-amber-500", avatar: "bg-amber-100 text-amber-800" },
   orange: { pill: "bg-orange-100 text-orange-900", dot: "bg-orange-500", avatar: "bg-orange-100 text-orange-800" },
   red: { pill: "bg-red-100 text-red-800", dot: "bg-red-500", avatar: "bg-red-100 text-red-800" },
@@ -20,8 +21,8 @@ const TONE: Record<PillTone, { pill: string; dot: string; avatar: string }> = {
   green: { pill: "bg-green-100 text-green-800", dot: "bg-green-600", avatar: "bg-green-100 text-green-800" },
   teal: { pill: "bg-teal-100 text-teal-800", dot: "bg-teal-500", avatar: "bg-teal-100 text-teal-800" },
   sky: { pill: "bg-sky-100 text-sky-800", dot: "bg-sky-500", avatar: "bg-sky-100 text-sky-800" },
-  blue: { pill: "bg-lime-100 text-lime-900", dot: "bg-lime-600", avatar: "bg-lime-100 text-lime-900" },
-  indigo: { pill: "bg-emerald-100 text-emerald-900", dot: "bg-emerald-600", avatar: "bg-emerald-100 text-emerald-900" },
+  blue: { pill: "bg-sky-100 text-sky-900", dot: "bg-sky-600", avatar: "bg-sky-100 text-sky-900" },
+  indigo: { pill: "bg-indigo-100 text-indigo-900", dot: "bg-indigo-600", avatar: "bg-indigo-100 text-indigo-900" },
   violet: { pill: "bg-violet-100 text-violet-800", dot: "bg-violet-500", avatar: "bg-violet-100 text-violet-800" },
 };
 
@@ -52,7 +53,7 @@ export function InitialsAvatar({ name, size = 32, muted = false, className }: { 
     <Avatar aria-hidden style={{ width: size, height: size }} className={cn("after:hidden", className)}>
       <AvatarFallback
         style={{ fontSize: Math.round(size * 0.36) }}
-        className={cn("font-semibold", TONE[tone].avatar, muted && "border border-dashed border-zinc-300")}
+        className={cn("font-semibold", TONE[tone].avatar, muted && "border border-dashed border-border")}
       >
         {initialsOf(name)}
       </AvatarFallback>
