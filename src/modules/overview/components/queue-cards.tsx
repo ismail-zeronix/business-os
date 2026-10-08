@@ -15,7 +15,7 @@ const plural = (count: number, one: string, many = `${one}s`) => `${count.toLoca
 export function queueCards(queues: QueueCounts, now: Date): QueueCard[] {
   const age = (date: Date | null, prefix: string) => (date ? `${prefix} ${formatRelativeAge(date, now)}` : "Nothing waiting");
   return [
-    { key: "enquiries", label: "Enquiries to review", value: queues.enquiriesToReview.count, hint: age(queues.enquiriesToReview.oldestAt, "Oldest received"), href: "/enquiries", icon: Inbox },
+    { key: "enquiries", label: "Enquiries needing attention", value: queues.enquiriesToReview.count, hint: age(queues.enquiriesToReview.oldestAt, "Oldest received"), href: "/enquiries", icon: Inbox },
     { key: "replies", label: "Awaiting supplier reply", value: queues.awaitingSupplierReply.count, hint: age(queues.awaitingSupplierReply.oldestAt, "Oldest sent"), href: "/?tab=waiting", icon: Hourglass },
     {
       key: "broadcasts",

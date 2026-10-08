@@ -94,12 +94,6 @@ export default async function OverviewPage(props: PageProps<"/">) {
       <div className="space-y-4 px-6 pt-2 pb-10">
         <QueueCards cards={queueCards(queues, now)} />
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <ReceivedChart data={charts.received} days={range} />
-          <PipelineChart data={charts.pipeline} />
-          <FreshnessChart data={freshness} />
-        </div>
-
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
           <Card className="min-w-0 gap-0 py-0 shadow-panel">
             <div className="flex items-baseline justify-between gap-3 p-5 pb-3">
@@ -123,6 +117,15 @@ export default async function OverviewPage(props: PageProps<"/">) {
             {tab === "prices" ? <LatestPriceList rows={await listRecentObservations(LIST_LIMIT)} now={now} searchParams={searchParams} /> : null}
             {tab === "emails" ? <EmailList rows={(await listEmailMessages({ band: "likely-review", status: "NEW", assignee: "all", page: 1 })).rows.slice(0, LIST_LIMIT)} now={now} /> : null}
           </SideTabs>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ReceivedChart data={charts.received} days={range} />
+          <FreshnessChart data={freshness} />
+        </div>
+
+        <div className="max-w-2xl">
+          <PipelineChart data={charts.pipeline} />
         </div>
       </div>
 
