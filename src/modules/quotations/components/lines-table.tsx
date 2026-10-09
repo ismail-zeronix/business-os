@@ -38,11 +38,28 @@ const INTERNAL = "bg-surface/80";
 const twoDecimals = (value: { toString(): string } | null): string | null => (value === null ? null : Number(value.toString()).toFixed(2));
 
 /**
- * The lines of a quotation, INTERNAL view: cost, markup and margin sit beside the customer's columns. A draft is editable line by line; an
- * issued or superseded quotation is read-only. The customer's copy is the print page, which reads none of the internal columns.
+ * The lines of a quotation, INTERNAL view (default): cost, markup and margin sit beside the customer's columns. A draft is
+ * editable line by line; an issued or superseded quotation is read-only. The customer's copy is the print page, which reads
+ * none of the internal columns.
+ *
+ * In "customer" view the three internal columns (and every value under them) are omitted from the markup entirely — this is a
+ * same-page preview of what the customer sees, not a CSS hide — and the row-rendering path is always the read-only one, even for
+ * an otherwise-editable draft: you cannot sensibly edit a line while hiding the cost/markup inputs editing depends on, so Customer
+ * view is always a true preview.
  */
-export function LinesTable({ quotation, evidenceHref, now }: { quotation: QuotationDetail; evidenceHref: (observationId: string) => string; now: Date }) {
-  const editable = quotation.status === "DRAFT" && !quotation.enquiry?.archivedAt;
+export function LinesTable({
+  quotation,
+  evidenceHref,
+  now,
+  view = "internal",
+}: {
+  quotation: QuotationDetail;
+  evidenceHref: (observationId: string) => string;
+  now: Date;
+  view?: "customer" | "internal";
+}) {
+  const showInternal = view === "internal";
+  const editable = showInternal && quotation.status === "DRAFT" && !quotation.enquiry?.archivedAt;
   const currency = quotation.currencyCode;
 
   return (
@@ -53,11 +70,11 @@ export function LinesTable({ quotation, evidenceHref, now }: { quotation: Quotat
             <TableHead className={`${HEAD} w-8`}>#</TableHead>
             <TableHead className={`${HEAD} w-[26%]`}>Description</TableHead>
             <TableHead className={`${HEAD} w-20 text-right`}>Qty</TableHead>
-            <TableHead className={`${HEAD} w-[19%] ${INTERNAL}`}>Cost</TableHead>
-            <TableHead className={`${HEAD} w-24 text-right ${INTERNAL}`}>Markup %</TableHead>
+            {showInternal ? <TableHead className={`${HEAD} w-[19%] ${INTERNAL}`}>Cost</TableHead> : null}
+            {showInternal ? <TableHead className={`${HEAD} w-24 text-right ${INTERNAL}`}>Markup %</TableHead> : null}
             <TableHead className={`${HEAD} w-28 text-right`}>Unit price</TableHead>
             <TableHead className={`${HEAD} w-28 text-right`}>Total</TableHead>
-            <TableHead className={`${HEAD} w-28 text-right ${INTERNAL}`}>Margin</TableHead>
+            {showInternal ? <TableHead className={`${HEAD} w-28 text-right ${INTERNAL}`}>Margin</TableHead> : null}
             {editable ? <TableHead className={`${HEAD} w-36`}>Actions</TableHead> : null}
           </TableRow>
         </TableHeader>
@@ -100,11 +117,17 @@ export function LinesTable({ quotation, evidenceHref, now }: { quotation: Quotat
                   {line.partNumber ? <span className="block font-mono text-[11px] text-muted-foreground">{line.partNumber}</span> : null}
                 </TableCell>
                 <TableCell className="num h-auto py-2 text-right">{line.quantity ?? "—"}</TableCell>
-                <TableCell className={`h-auto py-2 text-xs ${INTERNAL}`}>{costCell}</TableCell>
-                <TableCell className={`num h-auto py-2 text-right ${INTERNAL}`}>{line.markupPercent ? `${twoDecimals(line.markupPercent)}%` : <span className="text-muted-foreground">—</span>}</TableCell>
+                {showInternal ? <TableCell className={`h-auto py-2 text-xs ${INTERNAL}`}>{costCell}</TableCell> : null}
+                {showInternal ? (
+                  <TableCell className={`num h-auto py-2 text-right ${INTERNAL}`}>
+                    {line.markupPercent ? `${twoDecimals(line.markupPercent)}%` : <span className="text-muted-foreground">—</span>}
+                  </TableCell>
+                ) : null}
                 <TableCell className="num h-auto py-2 text-right">{line.unitPrice ? formatMoney(line.unitPrice.toString(), currency) : <span className="text-muted-foreground">—</span>}</TableCell>
                 <TableCell className="num h-auto py-2 text-right">{total === null ? <span className="text-muted-foreground">—</span> : formatMoney(centsToAmount(total), currency)}</TableCell>
-                <TableCell className={`num h-auto py-2 text-right ${INTERNAL}`}>{margin === null ? <span className="text-muted-foreground">—</span> : formatMoney(centsToAmount(margin), currency)}</TableCell>
+                {showInternal ? (
+                  <TableCell className={`num h-auto py-2 text-right ${INTERNAL}`}>{margin === null ? <span className="text-muted-foreground">—</span> : formatMoney(centsToAmount(margin), currency)}</TableCell>
+                ) : null}
               </TableRow>
             );
           })}
