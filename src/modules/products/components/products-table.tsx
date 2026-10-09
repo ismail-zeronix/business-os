@@ -24,16 +24,13 @@ export function ProductsTable({ rows }: { rows: ProductListRow[] }) {
         </TableHeader>
         <TableBody>
           {rows.map((row) => {
-            const subtitle = [row.brandName, row.categoryName, row.model].filter(Boolean).join(" · ");
+            const subtitle = [row.brandName, row.categoryName, row.model, row.specSummary].filter(Boolean).join(" · ");
             return (
               <TableRow key={row.id} className="relative">
                 <TableCell>
                   <Link href={`/products/${row.id}`} className="block py-2 font-medium after:absolute after:inset-0 hover:underline focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60 focus-visible:after:ring-inset">
-                    <div className="text-sm text-foreground break-words">{row.name}</div>
-                    {subtitle && <div className="text-xs text-muted-foreground break-words mt-0.5">{subtitle}</div>}
-                    {row.description && (
-                      <div className="text-xs text-muted-foreground break-words mt-1 whitespace-pre-wrap">{row.description}</div>
-                    )}
+                    <div className="text-sm text-foreground truncate">{row.name}</div>
+                    {subtitle && <div className="text-xs text-muted-foreground truncate mt-0.5">{subtitle}</div>}
                   </Link>
                 </TableCell>
                 <TableCell className="font-mono text-xs">{row.partNumber ?? <Unknown dash />}</TableCell>

@@ -53,6 +53,35 @@ export function StockCell({ stock, evidenceHref, now }: { stock: LatestStock | n
   );
 }
 
+/**
+ * The freshest supplier offer for one product: most recently STATED price/stock, never the cheapest — prices can be in different
+ * currencies and VAT states and are not comparable, so no supplier is ever ranked as "best price".
+ */
+export function BestOfferPanel({ offer, evidenceHref, now }: { offer: SupplierIntelligenceRow | null; evidenceHref: EvidenceHref; now: Date }) {
+  if (!offer) {
+    return (
+      <TableShell>
+        <EmptyState title="No supplier has reported a price or stock for this product yet" description="A best current offer appears here once a confirmed broadcast item links a supplier's price or stock to this product." />
+      </TableShell>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-border/70 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link href={`/suppliers/${offer.supplierId}`} className="text-sm font-medium hover:underline">
+          {offer.supplierName}
+        </Link>
+        <FreshnessBadge observedAt={offer.latestObservedAt} now={now} />
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <PriceCell price={offer.price} evidenceHref={evidenceHref} now={now} />
+        <StockCell stock={offer.stock} evidenceHref={evidenceHref} now={now} />
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">Most recently stated price and stock. Suppliers are not ranked by price.</p>
+    </div>
+  );
+}
+
 /** SUPPLIER INTELLIGENCE for one product: what each supplier most recently said about price and stock, with age and evidence. */
 export function ProductIntelligenceTable({ rows, evidenceHref }: { rows: SupplierIntelligenceRow[]; evidenceHref: EvidenceHref }) {
   const now = new Date();

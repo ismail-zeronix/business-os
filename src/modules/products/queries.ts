@@ -5,6 +5,7 @@ import { escapeLike } from "../../lib/like";
 import { normalizeCode } from "../../lib/normalize";
 import { PAGE_SIZE } from "../../lib/search-params";
 import { observationSummaryByProduct, type LatestPriceSummary } from "../observations/queries";
+import { describeAttributes } from "../specs/format";
 
 export type ProductListParams = {
   q?: string;
@@ -29,6 +30,8 @@ export type ProductListRow = {
   supplierCount: number;
   latestObservedAt: Date | null;
   latestPrice: LatestPriceSummary | null;
+  /** Top 2 specs as "Label: value" phrases, e.g. "RAM: 16 GB · Storage: 512 GB". Null when the product has no active attributes. */
+  specSummary: string | null;
 };
 
 const MAX_TOKENS = 6;
@@ -94,7 +97,27 @@ export async function searchProducts(params: ProductListParams): Promise<{ rows:
     db.product.count({ where }),
   ]);
 
-  const summaries = await observationSummaryByProduct(products.map((p) => p.id));
+  const ids = products.map((p) => p.id);
+  const [summaries, attributeRows] = await Promise.all([
+    observationSummaryByProduct(ids),
+    db.productAttribute.findMany({
+      where: { productId: { in: ids }, retractedAt: null },
+      select: { productId: true, attributeKey: true, valueText: true, valueNum: true, valueList: true, unit: true },
+    }),
+  ]);
+
+  const attributesByProduct = new Map<string, typeof attributeRows>();
+  for (const row of attributeRows) {
+    const rows = attributesByProduct.get(row.productId) ?? [];
+    rows.push(row);
+    attributesByProduct.set(row.productId, rows);
+  }
+  const specSummaryByProduct = new Map<string, string | null>();
+  for (const id of ids) {
+    const rows = attributesByProduct.get(id) ?? [];
+    const described = describeAttributes(rows.map((r) => ({ ...r, valueNum: r.valueNum === null ? null : Number(r.valueNum) }))).slice(0, 2);
+    specSummaryByProduct.set(id, described.length > 0 ? described.join(" · ") : null);
+  }
 
   return {
     total,
@@ -112,6 +135,7 @@ export async function searchProducts(params: ProductListParams): Promise<{ rows:
       supplierCount: summaries.get(p.id)?.supplierCount ?? 0,
       latestObservedAt: summaries.get(p.id)?.latestObservedAt ?? null,
       latestPrice: summaries.get(p.id)?.latestPrice ?? null,
+      specSummary: specSummaryByProduct.get(p.id) ?? null,
     })),
   };
 }

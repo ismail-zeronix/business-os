@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { buildHref, firstParam } from "@/lib/search-params";
 import { listActivity } from "@/modules/audit/queries";
 import { EvidenceDrawer } from "@/modules/evidence/components/evidence-drawer";
-import { HistoryTable, ProductIntelligenceTable } from "@/modules/observations/components/offers";
+import { BestOfferPanel, HistoryTable, ProductIntelligenceTable } from "@/modules/observations/components/offers";
 import { getProductIntelligence, listProductHistory } from "@/modules/observations/procurement-queries";
 import { setProductStatusAction } from "@/modules/products/actions";
 import { AliasPanel } from "@/modules/products/components/alias-panel";
@@ -117,13 +117,14 @@ export default async function ProductDetailPage(props: PageProps<"/products/[id]
       <PageBody>
         {tab === "overview" ? (
           <div className="space-y-4">
-          <ProductIntelligenceTable rows={intelligence} evidenceHref={evidenceHref} />
-          {showHistory ? (
-            <Panel>
-              <div className="border-b border-border/70 px-4 py-2.5 text-xs font-medium text-muted-foreground">Observation history, including retracted</div>
-              <HistoryTable rows={historyRows} evidenceHref={evidenceHref} />
-            </Panel>
-          ) : null}
+          <PanelSection title="Best current offer">
+            <BestOfferPanel offer={intelligence[0] ?? null} evidenceHref={evidenceHref} now={new Date()} />
+          </PanelSection>
+
+          <Panel>
+            <div className="border-b border-border/70 px-4 py-2.5 text-xs font-medium text-muted-foreground">All supplier offers</div>
+            <ProductIntelligenceTable rows={intelligence} evidenceHref={evidenceHref} />
+          </Panel>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <PanelSection title="Identity" className="lg:col-span-2">
@@ -151,6 +152,13 @@ export default async function ProductDetailPage(props: PageProps<"/products/[id]
               </div>
             </PanelSection>
           </div>
+
+          {showHistory ? (
+            <Panel>
+              <div className="border-b border-border/70 px-4 py-2.5 text-xs font-medium text-muted-foreground">Price history, including retracted</div>
+              <HistoryTable rows={historyRows} evidenceHref={evidenceHref} />
+            </Panel>
+          ) : null}
           </div>
         ) : null}
 
