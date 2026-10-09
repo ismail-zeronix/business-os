@@ -260,48 +260,52 @@ export default async function QuotationPage(props: PageProps<"/quotations/[id]">
 
       <div className="mb-2 flex justify-end">{pricingToggle}</div>
 
-      <SummaryStrip quotation={quotation} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_320px]">
+        <div>
+          <SummaryStrip quotation={quotation} />
 
-      <section aria-label="Lines" className="mb-4 space-y-2">
-        {quotation.lines.length === 0 ? (
-          <Panel>
-            <EmptyState title="No lines yet" description="Add a line from a supplier's confirmation, or type one." action={canEdit ? addLine : undefined} />
-          </Panel>
-        ) : (
-          <LinesTable quotation={quotation} evidenceHref={evidenceHref} now={now} view={pricingView} />
-        )}
-        {quotation.lines.length > 0 ? (
-          <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-1 text-xs text-muted-foreground">
-            <div className="flex flex-wrap items-start gap-4">
-              <span>Shaded columns are internal and never printed.</span>
-              {draft ? (
-                <details className="max-w-xl">
-                  <summary className="cursor-pointer select-none hover:text-foreground">How pricing works</summary>
-                  <p className="mt-1">
-                    Change the markup and the price follows; change the price and the markup follows. Markup needs a known cost in {quotation.currencyCode}. The refresh icon takes the
-                    cost again from the supplier chosen for that requirement.
-                  </p>
-                </details>
-              ) : null}
+          <section aria-label="Lines" className="mb-4 space-y-2">
+            {quotation.lines.length === 0 ? (
+              <Panel>
+                <EmptyState title="No lines yet" description="Add a line from a supplier's confirmation, or type one." action={canEdit ? addLine : undefined} />
+              </Panel>
+            ) : (
+              <LinesTable quotation={quotation} evidenceHref={evidenceHref} now={now} view={pricingView} />
+            )}
+            {quotation.lines.length > 0 ? (
+              <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-start gap-4">
+                  <span>Shaded columns are internal and never printed.</span>
+                  {draft ? (
+                    <details className="max-w-xl">
+                      <summary className="cursor-pointer select-none hover:text-foreground">How pricing works</summary>
+                      <p className="mt-1">
+                        Change the markup and the price follows; change the price and the markup follows. Markup needs a known cost in {quotation.currencyCode}. The refresh icon takes
+                        the cost again from the supplier chosen for that requirement.
+                      </p>
+                    </details>
+                  ) : null}
+                </div>
+                {draft ? addLine : null}
+              </div>
+            ) : null}
+          </section>
+
+          {canEmail || sentEmails.length > 0 ? (
+            <div className="mb-4">
+              <SentEmailsSection rows={sentEmails} />
             </div>
-            {draft ? addLine : null}
-          </div>
-        ) : null}
-      </section>
+          ) : null}
 
-      <div className="mb-4">
-        <TotalsPanel quotation={quotation} view={pricingView} draftActions={totalsFooter} />
-      </div>
-
-      {canEmail || sentEmails.length > 0 ? (
-        <div className="mb-4">
-          <SentEmailsSection rows={sentEmails} />
+          <CollapsibleSection title="Activity" count={activity.length}>
+            <Timeline rows={activity} emptyTitle="No activity recorded yet" flat />
+          </CollapsibleSection>
         </div>
-      ) : null}
 
-      <CollapsibleSection title="Activity" count={activity.length}>
-        <Timeline rows={activity} emptyTitle="No activity recorded yet" flat />
-      </CollapsibleSection>
+        <aside className="lg:sticky lg:top-5">
+          <TotalsPanel quotation={quotation} view={pricingView} draftActions={totalsFooter} />
+        </aside>
+      </div>
 
       <EvidenceDrawer observationId={firstParam(searchParams, "evidence")} closeHref={buildHref(basePath, searchParams, { evidence: undefined })} />
     </PageBody>
