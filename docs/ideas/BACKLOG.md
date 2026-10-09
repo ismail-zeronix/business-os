@@ -90,5 +90,11 @@ Ideas that are **not authorised for implementation**. Do not build these unless 
 - Show each page's `Status:` (TO BE FILLED / DRAFT / CONFIRMED) as a small marker in the tree, and a count of pages still to fill.
 - The AI context builder reads `knowledge/` (belongs to the paused AI plan): README rules first, then the pages relevant to the task, and reports which pages were TO BE FILLED.
 
+## UI v4 consolidation & team assignment (deferred from the 2026-10-09 plan)
+- Supplier/Product/Broadcast-item-level assignment: would need a new `assignedToId` field + migration per model. Not requested; revisit only if a real workflow need shows up.
+- Knowledge folder rename to match the Sales/Procurement/Products/Policies/Technical/Templates taxonomy. Content-ops task, not code; risks breaking relative links — do carefully, not as a drive-by.
+- `cn` import-path inconsistency (`"cn"` package vs `@/lib/utils`) across ~22 `components/ui/*` files. Cosmetic code-style nit, unrelated to the theme work that touched those files.
+- `shadcn` CLI package listed under `dependencies` instead of `devDependencies` in `package.json`. Works today (`globals.css` imports its `tailwind.css` at build time); low-value/non-zero-risk to move now.
+
 ## Later modules (see `docs/plans/ROADMAP.md`)
 Sourcing/RFQ, Second Brain (pgvector), multi-agent platform, WhatsApp and other channels, advanced analytics.

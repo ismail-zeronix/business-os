@@ -182,7 +182,6 @@ export async function listEnquiries(params: EnquiryListParams, currentUserId?: s
       observedAt: e.evidenceSource.observedAt,
       channel: e.evidenceSource.channel,
       customerName: e.customer?.name ?? null,
-      assignedTo: e.assignedTo,
       requesterName: e.requesterName,
       requesterEmail: e.requesterEmail,
       subject: e.subject,
