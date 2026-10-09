@@ -27,6 +27,7 @@ export const AUDIT_ENTITY_TYPES = [
   "SmtpAccount",
   "EmailMessage",
   "AiProviderSetting",
+  "Task",
 ] as const;
 
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
@@ -140,7 +141,13 @@ export type AuditAction =
   | "ai_provider.updated"
   | "ai_provider.key_changed"
   | "ai_provider.activated"
-  | "ai_provider.deactivated";
+  | "ai_provider.deactivated"
+  | "task.created"
+  | "task.updated"
+  | "task.assigned"
+  | "task.status_changed"
+  | "task_digest.sent"
+  | "task_digest.failed";
 
 /** The aggregate that "owns" a change, so an entity's Activity tab can include its children (a contact edit is scoped to its Supplier). */
 export type AuditScope = { type: AuditEntityType; id: string };

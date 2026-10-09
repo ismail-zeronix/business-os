@@ -40,6 +40,8 @@ import { planQuotationNav, quotationLinkLabel } from "@/modules/quotations/compo
 import { CreateQuotationButton } from "@/modules/quotations/components/quotation-actions";
 import { listQuotationsForEnquiry } from "@/modules/quotations/queries";
 import { SourcingTab } from "@/modules/sourcing/components/sourcing-tab";
+import { EntityTasksPanel } from "@/modules/tasks/components/entity-tasks-panel";
+import { TaskSheet } from "@/modules/tasks/components/task-sheet";
 import { Alert } from "@/components/ui/alert";
 
 const FILTERS = ["all", "pending", "confirmed", "ignored"] as const;
@@ -105,6 +107,7 @@ export default async function EnquiryWorkspacePage(props: PageProps<"/enquiries/
   const keepQuery = filter === "all" ? "" : `filter=${filter}`;
   const readyCount = enquiry.readyItemIds.length;
   const evidenceHref = (observationId: string) => buildHref(basePath, searchParams, { evidence: observationId });
+  const taskHref = (taskId: string) => buildHref(basePath, searchParams, { task: taskId });
 
   const ranges: LineRange[] = items.map((i) => ({ start: i.sourceLineStart ?? 0, end: i.sourceLineEnd ?? 0, status: i.reviewStatus })).filter((r) => r.start > 0);
   const selectedRange = selected?.sourceLineStart && selected.sourceLineEnd ? { start: selected.sourceLineStart, end: selected.sourceLineEnd } : null;
@@ -229,6 +232,9 @@ export default async function EnquiryWorkspacePage(props: PageProps<"/enquiries/
 
       {view === "activity" ? (
         <>
+          <div className="mb-5">
+            <EntityTasksPanel linkedType="ENQUIRY" linkedId={id} linkedLabel={reference(enquiry.number)} taskHref={taskHref} />
+          </div>
           <NotesComposer enquiryId={id} />
           <Timeline rows={await listActivity({ type: "Enquiry", id })} emptyTitle="No activity recorded yet" />
         </>
@@ -320,6 +326,7 @@ export default async function EnquiryWorkspacePage(props: PageProps<"/enquiries/
 
       <ReviewKeys itemIds={visible.map((i) => i.id)} currentId={selected?.id ?? null} />
       <EvidenceDrawer observationId={firstParam(searchParams, "evidence")} closeHref={buildHref(basePath, searchParams, { evidence: undefined })} />
+      <TaskSheet taskId={firstParam(searchParams, "task")} closeHref={buildHref(basePath, searchParams, { task: undefined })} />
     </PageBody>
   );
 }

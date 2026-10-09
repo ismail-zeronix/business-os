@@ -1,4 +1,4 @@
-import { Building2, FileText, Inbox, LayoutDashboard, Library, Package, Receipt, RadioTower, ScrollText, Search, Settings, Users, type LucideIcon } from "lucide-react";
+import { Building2, FileText, Inbox, LayoutDashboard, Library, ListTodo, Package, Receipt, RadioTower, ScrollText, Search, Settings, Users, type LucideIcon } from "lucide-react";
 import { SETTINGS_NAVIGATION } from "./settings-navigation";
 
 /** `adminOnly`: shown only to admins (the screen behind it also refuses everyone else). */
@@ -10,7 +10,12 @@ export type NavGroup = { label?: string; items: NavItem[] };
  * disabled: no fake screens. Add an item here only when its screen exists and works. The sidebar and the breadcrumbs both read this.
  */
 export const NAVIGATION: NavGroup[] = [
-  { items: [{ label: "Overview", href: "/", icon: LayoutDashboard }] },
+  {
+    items: [
+      { label: "Overview", href: "/", icon: LayoutDashboard },
+      { label: "Tasks", href: "/tasks", icon: ListTodo },
+    ],
+  },
   {
     label: "Procurement",
     items: [

@@ -182,6 +182,10 @@ model User {
   aiProviderSettingsCreated  AiProviderSetting[]   @relation("AiProviderSettingCreatedBy")
   aiExecutions               AiExecution[]         @relation("AiExecutionActor")
   contactNotesCreated        ContactNote[]         @relation("ContactNoteCreatedBy")
+  tasksAssigned              Task[]                @relation("TaskAssignedTo")
+  tasksCreated               Task[]                @relation("TaskCreatedBy")
+  tasksCompleted             Task[]                @relation("TaskCompletedBy")
+  tasksCancelled             Task[]                @relation("TaskCancelledBy")
 
   @@map("users")
 }
@@ -1433,4 +1437,72 @@ model AiExecution {
   @@index([createdAt(sort: Desc)])
   @@index([actorId, createdAt(sort: Desc)])
   @@map("ai_executions")
+}
+
+// ─────────────────────────────── Tasks ───────────────────────────────
+// Manual work items only. System-derived tasks (enquiry assigned with no quote, an enquiry's blocker or required-by
+// date, an email still waiting for triage) are computed live from Enquiry/EmailMessage state in src/modules/tasks -
+// nothing about them is stored here, so they can never drift out of sync with the record they describe.
+
+enum TaskStatus {
+  OPEN
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+/// What a manual task is about, if anything. Not a real FK - one column can't reference three tables - same
+/// non-FK polymorphic shape as AuditLog.scopeType/scopeId. A migration CHECK enforces both NULL or both set.
+enum TaskLinkType {
+  ENQUIRY
+  CUSTOMER
+  EMAIL
+}
+
+/// A piece of work someone created by hand - the other half of "hybrid" task management, alongside rows derived
+/// live from Enquiry/EmailMessage state (never duplicated here). An ordinary mutable operational record like
+/// Enquiry (status + audit trail), not an immutable observation - no retraction columns. Visibility is
+/// attribution-only like Enquiry.assignedToId/Customer.ownerId: assignment never restricts who can see or act on
+/// a task. Who may point assignedToId at someone OTHER than themselves is restricted in the service, not here
+/// (only an admin may hand a task to someone else; a non-admin may only claim or release one).
+model Task {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  title       String
+  description String?
+  status      TaskStatus   @default(OPEN)
+  priority    TaskPriority @default(NORMAL)
+  dueAt       DateTime?    @map("due_at") @db.Timestamptz(3)
+
+  assignedToId String? @map("assigned_to_id") @db.Uuid
+  createdById  String  @map("created_by_id") @db.Uuid
+
+  /// Optional context link to one entity. Both NULL or both set (CHECK in the migration). The service validates
+  /// the target exists at creation; record pages join back by (linkedType, linkedId) directly - no reverse FK.
+  linkedType TaskLinkType? @map("linked_type")
+  linkedId   String?       @map("linked_id") @db.Uuid
+
+  completedAt     DateTime? @map("completed_at") @db.Timestamptz(3)
+  completedById   String?   @map("completed_by_id") @db.Uuid
+  cancelledAt     DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  cancelledById   String?   @map("cancelled_by_id") @db.Uuid
+  cancelledReason String?   @map("cancelled_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  assignedTo  User? @relation("TaskAssignedTo", fields: [assignedToId], references: [id], onDelete: Restrict)
+  createdBy   User  @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  completedBy User? @relation("TaskCompletedBy", fields: [completedById], references: [id], onDelete: Restrict)
+  cancelledBy User? @relation("TaskCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
+
+  @@index([status, dueAt])
+  @@index([assignedToId, status])
+  @@index([linkedType, linkedId])
+  @@map("tasks")
 }

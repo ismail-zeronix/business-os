@@ -5,6 +5,7 @@ import type { Prisma } from "../../generated/prisma/client";
 import type { EvidenceChannel } from "../../generated/prisma/enums";
 import { diffFields } from "../../lib/diff";
 import { writeAudit } from "../audit/service";
+import { assertAdmin } from "../../core/permissions/roles";
 import { addCustomerContact } from "../customers/contact.service";
 import { createCustomer } from "../customers/service";
 import { createEvidence } from "../evidence/service";

@@ -12,7 +12,6 @@ import { isEnquiryItemReady } from "./readiness";
 
 export type EnquiryView = "attention" | "new" | "sourcing" | "waiting" | "quote" | "all" | "archived";
 export const ENQUIRY_VIEWS: readonly EnquiryView[] = ["attention", "new", "sourcing", "waiting", "quote", "all", "archived"];
-
 export type EnquiryAssigneeFilter = "all" | "mine" | "unassigned";
 
 export type EnquiryListParams = {
@@ -41,13 +40,14 @@ export type EnquiryListRow = {
   observedAt: Date;
   channel: EvidenceChannel;
   customerName: string | null;
+  /** Who this enquiry's sales owner is (Enquiry.assignedToId), for the list's "Assigned" column - attribution only, see owner-control.tsx. */
+  assignedTo: { id: string; name: string } | null;
   requesterName: string | null;
   requesterEmail: string | null;
   subject: string | null;
   /** Descriptions of the first two requirements, for the "Requirement" column. */
   requirements: string[];
   counts: { total: number; pending: number; confirmed: number; ignored: number };
-  assignedTo: { id: string; name: string } | null;
   /** Raw free-text next action (Enquiry.nextAction), kept for potential reuse beyond the table. */
   nextAction: string | null;
   /** What the "Next action" column renders: an explicit nextAction if set, otherwise a status-derived hint. null = nothing to show. */
@@ -182,6 +182,7 @@ export async function listEnquiries(params: EnquiryListParams, currentUserId?: s
       observedAt: e.evidenceSource.observedAt,
       channel: e.evidenceSource.channel,
       customerName: e.customer?.name ?? null,
+      assignedTo: e.assignedTo,
       requesterName: e.requesterName,
       requesterEmail: e.requesterEmail,
       subject: e.subject,

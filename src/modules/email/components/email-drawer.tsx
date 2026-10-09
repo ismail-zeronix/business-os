@@ -13,6 +13,7 @@ import { getCurrentActor } from "@/core/permissions/actor";
 import { formatDateTime } from "@/lib/format";
 import { EMAIL_TRIAGE_LABEL } from "@/lib/labels";
 import { listUserOptions } from "@/modules/enquiries/queries";
+import { EntityTasksPanel } from "@/modules/tasks/components/entity-tasks-panel";
 import { getEmailMessage, type EmailDetail } from "../queries";
 import { AssignEmailControl, CreateEnquiryFromEmailButton, DismissEmailControl, RestoreEmailButton } from "./triage-actions";
 
@@ -65,6 +66,8 @@ function EmailPanel({ email, currentUserId, users }: { email: EmailDetail; curre
           </p>
         ) : null}
       </section>
+
+      <EntityTasksPanel linkedType="EMAIL" linkedId={email.id} linkedLabel={email.subject ?? "(no subject)"} />
 
       <section>
         <PanelCaption>Message</PanelCaption>
