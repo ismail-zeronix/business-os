@@ -1,5 +1,5 @@
 import { getCurrentActor, requireActor } from "@/core/permissions/actor";
-import { Download, FileText, Mail, Pencil, Plus, Printer } from "lucide-react";
+import { Download, FileText, Mail, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,6 +7,7 @@ import { z } from "zod";
 import { CollapsibleSection } from "@/components/application/collapsible-section";
 import { PageBody, Panel } from "@/components/application/page-canvas";
 import { PageHeader } from "@/components/application/page-header";
+import { RecordHeader } from "@/components/application/record-header";
 import { EmptyState } from "@/components/application/states";
 import { QuotationStatusPill } from "@/components/application/status-badges";
 import { Timeline } from "@/components/application/timeline";
@@ -14,8 +15,9 @@ import { FormDrawer } from "@/components/forms/form-drawer";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDateTime, toZonedInputValue } from "@/lib/format";
+import { formatDate, formatDateTime, toZonedInputValue } from "@/lib/format";
 import { buildHref, firstParam } from "@/lib/search-params";
+import { cn } from "@/lib/utils";
 import { getActiveSmtpAccount } from "@/modules/email/smtp.queries";
 import { getOwnSignature } from "@/modules/users/queries";
 import { listActivity } from "@/modules/audit/queries";
@@ -26,10 +28,10 @@ import { EvidenceDrawer } from "@/modules/evidence/components/evidence-drawer";
 import { ConvertToInvoiceButton } from "@/modules/invoices/components/invoice-actions";
 import { invoiceReference } from "@/modules/invoices/shared";
 import { AddLineTabs } from "@/modules/quotations/components/add-line-tabs";
-import { QuotationDetailsForm } from "@/modules/quotations/components/details-form";
 import { LinesTable } from "@/modules/quotations/components/lines-table";
 import { EmailQuotationForm } from "@/modules/quotations/components/email-quotation-form";
 import { IssueQuotationButton, ReviseQuotationButton } from "@/modules/quotations/components/quotation-actions";
+import { QuotationFooterMenu } from "@/modules/quotations/components/quotation-footer-menu";
 import { SentEmailsSection } from "@/modules/quotations/components/sent-emails";
 import { SummaryStrip } from "@/modules/quotations/components/summary-strip";
 import { TotalsPanel } from "@/modules/quotations/components/totals-panel";
@@ -78,11 +80,13 @@ export default async function QuotationPage(props: PageProps<"/quotations/[id]">
   const canEdit = draft && !archived;
   const current = quotation.revisions.find((r) => r.status !== "SUPERSEDED");
   const now = new Date();
+  const vat = Number(quotation.vatPercent.toString());
+  // Same-page preview only: never changes what /print or /pdf render. Defaults to "internal" so existing bookmarked/shared links are unchanged.
+  const pricingView = firstParam(searchParams, "pricing") === "customer" ? "customer" : "internal";
 
   // The pre-written email: recipients from the customer's contacts, the quotation's own terms, and this person's signature.
   let emailButton = null;
   if (canEmail) {
-    const vat = Number(quotation.vatPercent.toString());
     const totals = computeTotals(quotation.lines, quotation.vatPercent);
     const recipients = compose?.recipients ?? [];
     const attention = quotation.contactName?.trim().toLowerCase();
@@ -161,6 +165,34 @@ export default async function QuotationPage(props: PageProps<"/quotations/[id]">
     </FormDrawer>
   );
 
+  const pricingToggleLink = (text: string, active: boolean, href: string) => (
+    <Link
+      key={text}
+      href={href}
+      className={cn(
+        "flex h-7 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-xs transition-colors",
+        active ? "border-brand/40 bg-brand/10 text-brand" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {text}
+    </Link>
+  );
+
+  const pricingToggle = (
+    <div className="flex items-center gap-1.5">
+      {pricingToggleLink("Internal pricing", pricingView === "internal", buildHref(basePath, searchParams, { pricing: undefined }))}
+      {pricingToggleLink("Customer view", pricingView === "customer", buildHref(basePath, searchParams, { pricing: "customer" }))}
+    </div>
+  );
+
+  // Draft-only actions, rendered inside TotalsPanel's footer instead of the navbar, next to the numbers they affect.
+  const totalsFooter = draft
+    ? {
+        primary: canEdit ? <IssueQuotationButton id={quotation.id} /> : null,
+        secondary: <QuotationFooterMenu label={label} details={details} canEdit={canEdit} previewHref={`${basePath}/print`} />,
+      }
+    : undefined;
+
   return (
     <PageBody>
       <PageHeader
@@ -180,35 +212,14 @@ export default async function QuotationPage(props: PageProps<"/quotations/[id]">
         }
         actions={
           <>
-            {draft ? (
-              <FormDrawer
-                trigger={
-                  <Button variant="outline" size="sm" disabled={!canEdit} title={archived ? "Restore the enquiry to edit this quotation" : undefined}>
-                    <Pencil aria-hidden /> Edit details
-                  </Button>
-                }
-                title={`Edit ${label}`}
-                description="What the customer's copy shows."
-              >
-                <QuotationDetailsForm quotation={details} />
-              </FormDrawer>
-            ) : null}
-            {draft ? addLine : null}
-            {draft ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={`${basePath}/print`} target="_blank" prefetch={false}>
-                  <Printer aria-hidden /> Preview customer copy
-                </Link>
-              </Button>
-            ) : (
+            {!draft ? (
               <Button asChild variant="outline" size="sm">
                 <a href={`${basePath}/pdf`} download title="Downloads the customer copy as a PDF file">
                   <Download aria-hidden /> Download PDF
                 </a>
               </Button>
-            )}
+            ) : null}
             {emailButton}
-            {draft && canEdit ? <IssueQuotationButton id={quotation.id} /> : null}
             {quotation.status === "ISSUED" && !archived ? <ReviseQuotationButton id={quotation.id} /> : null}
             {quotation.status === "ISSUED" ? (
               quotation.invoice ? (
@@ -223,6 +234,12 @@ export default async function QuotationPage(props: PageProps<"/quotations/[id]">
             ) : null}
           </>
         }
+      />
+
+      <RecordHeader
+        eyebrow={label}
+        title={quotation.customerName ?? "No customer name"}
+        subline={[quotation.currencyCode, `VAT ${vat}%`, quotation.validUntil ? `Valid until ${formatDate(quotation.validUntil)}` : "No validity set"].join(" · ")}
       />
 
       {quotation.status === "SUPERSEDED" ? (
@@ -241,6 +258,8 @@ export default async function QuotationPage(props: PageProps<"/quotations/[id]">
         </Alert>
       ) : null}
 
+      <div className="mb-2 flex justify-end">{pricingToggle}</div>
+
       <SummaryStrip quotation={quotation} />
 
       <section aria-label="Lines" className="mb-4 space-y-2">
@@ -249,26 +268,29 @@ export default async function QuotationPage(props: PageProps<"/quotations/[id]">
             <EmptyState title="No lines yet" description="Add a line from a supplier's confirmation, or type one." action={canEdit ? addLine : undefined} />
           </Panel>
         ) : (
-          <LinesTable quotation={quotation} evidenceHref={evidenceHref} now={now} />
+          <LinesTable quotation={quotation} evidenceHref={evidenceHref} now={now} view={pricingView} />
         )}
         {quotation.lines.length > 0 ? (
           <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-1 text-xs text-muted-foreground">
-            <span>Shaded columns are internal and never printed.</span>
-            {draft ? (
-              <details className="max-w-xl">
-                <summary className="cursor-pointer select-none hover:text-foreground">How pricing works</summary>
-                <p className="mt-1">
-                  Change the markup and the price follows; change the price and the markup follows. Markup needs a known cost in {quotation.currencyCode}. The refresh icon takes the
-                  cost again from the supplier chosen for that requirement.
-                </p>
-              </details>
-            ) : null}
+            <div className="flex flex-wrap items-start gap-4">
+              <span>Shaded columns are internal and never printed.</span>
+              {draft ? (
+                <details className="max-w-xl">
+                  <summary className="cursor-pointer select-none hover:text-foreground">How pricing works</summary>
+                  <p className="mt-1">
+                    Change the markup and the price follows; change the price and the markup follows. Markup needs a known cost in {quotation.currencyCode}. The refresh icon takes the
+                    cost again from the supplier chosen for that requirement.
+                  </p>
+                </details>
+              ) : null}
+            </div>
+            {draft ? addLine : null}
           </div>
         ) : null}
       </section>
 
       <div className="mb-4">
-        <TotalsPanel quotation={quotation} />
+        <TotalsPanel quotation={quotation} view={pricingView} draftActions={totalsFooter} />
       </div>
 
       {canEmail || sentEmails.length > 0 ? (
