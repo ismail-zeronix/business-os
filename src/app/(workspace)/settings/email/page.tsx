@@ -3,6 +3,7 @@ import { Plus } from "lucide-react";
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Panel, PanelSection } from "@/components/application/page-canvas";
+import { SettingsSectionHeader } from "@/components/application/settings-section-header";
 import { EmptyState } from "@/components/application/states";
 import { TabNav } from "@/components/application/tab-nav";
 import { TopbarActions } from "@/components/application/topbar-slot";
@@ -28,13 +29,37 @@ export default async function EmailSettingsPage(props: PageProps<"/settings/emai
   const actor = await requireAdmin();
   await connection(); // live accounts and sync status: never prerender it at build time
   const searchParams = await props.searchParams;
-  const tab = firstParam(searchParams, "tab") === "outgoing" ? "outgoing" : "incoming";
+  const requested = firstParam(searchParams, "tab");
+  const tab = requested === "outgoing" ? "outgoing" : requested === "signature" ? "signature" : "incoming";
   const keyConfigured = isSecretKeyConfigured();
 
-  const tabs = <TabNav tabs={[{ key: "incoming", label: "Incoming" }, { key: "outgoing", label: "Outgoing" }]} active={tab} basePath="/settings/email" />;
+  const tabs = (
+    <TabNav
+      tabs={[
+        { key: "incoming", label: "Incoming" },
+        { key: "outgoing", label: "Outgoing" },
+        { key: "signature", label: "Signature" },
+      ]}
+      active={tab}
+      basePath="/settings/email"
+    />
+  );
+
+  if (tab === "signature") {
+    const signature = await getOwnSignature(actor.id);
+    return (
+      <>
+        {tabs}
+        <SettingsSectionHeader title="Signature" description="The signature appended to quotation emails you send." />
+        <PanelSection title="Your signature">
+          <SignatureForm signature={signature} suggestion={defaultSignature(actor.name)} />
+        </PanelSection>
+      </>
+    );
+  }
 
   if (tab === "outgoing") {
-    const [rows, incomingRows, signature] = await Promise.all([listSmtpAccounts(), listEmailAccounts(), getOwnSignature(actor.id)]);
+    const [rows, incomingRows] = await Promise.all([listSmtpAccounts(), listEmailAccounts()]);
     const incoming = incomingRows.filter((row) => row.status === "ACTIVE").map((row) => ({ value: row.id, label: `${row.username} (${row.label})` }));
     const addAccount = (
       <FormDrawer
@@ -54,18 +79,14 @@ export default async function EmailSettingsPage(props: PageProps<"/settings/emai
       <>
         <TopbarActions>{addAccount}</TopbarActions>
         {tabs}
-        <div className="space-y-5">
-          <PanelSection title="Your signature">
-            <SignatureForm signature={signature} suggestion={defaultSignature(actor.name)} />
-          </PanelSection>
-          {rows.length === 0 ? (
-            <Panel>
-              <EmptyState title="No outgoing account yet" description="Add the mailbox quotations are sent from. Only one is active at a time, and passwords are stored encrypted." action={addAccount} />
-            </Panel>
-          ) : (
-            <SmtpAccountsTable rows={rows} incoming={incoming} defaultFromName={COMPANY.name} testTo={actor.email} keyConfigured={keyConfigured} />
-          )}
-        </div>
+        <SettingsSectionHeader title="Outgoing" description="The mailbox quotations are emailed from." />
+        {rows.length === 0 ? (
+          <Panel>
+            <EmptyState title="No outgoing account yet" description="Add the mailbox quotations are sent from. Only one is active at a time, and passwords are stored encrypted." action={addAccount} />
+          </Panel>
+        ) : (
+          <SmtpAccountsTable rows={rows} incoming={incoming} defaultFromName={COMPANY.name} testTo={actor.email} keyConfigured={keyConfigured} />
+        )}
       </>
     );
   }
@@ -90,6 +111,7 @@ export default async function EmailSettingsPage(props: PageProps<"/settings/emai
     <>
       <TopbarActions>{addAccount}</TopbarActions>
       {tabs}
+      <SettingsSectionHeader title="Incoming" description="IMAP mailboxes that receive customer enquiries." />
       {rows.length === 0 ? (
         <Panel>
           <EmptyState title="No email accounts yet" description="Add the mailbox that receives customer enquiries. Access is read-only and passwords are stored encrypted." action={addAccount} />
