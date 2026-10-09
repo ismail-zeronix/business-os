@@ -49,6 +49,11 @@ function ResultBlock({ result, evidenceHref }: { result: SearchResult; evidenceH
       ) : (
         <p className="border-t border-border/70 px-4 py-2 text-xs text-muted-foreground">No supplier price or stock observed for this product yet.</p>
       )}
+      <div className="px-4 py-2 text-right">
+        <Link href={`/products/${result.id}`} className="text-xs font-medium text-brand hover:underline">
+          View product →
+        </Link>
+      </div>
     </section>
   );
 }
