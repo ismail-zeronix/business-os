@@ -13,15 +13,42 @@ export function useDrawerClose(): () => void {
 /**
  * Right-hand drawer (480px) for create/edit forms. Preferred over modals; never stacked. Its content is unmounted when it closes,
  * so a reopened drawer always starts from a clean form.
+ *
+ * Usually used uncontrolled, with `trigger` as the clickable element. When `open`/`onOpenChange` are supplied instead (e.g. opened
+ * from a `DropdownMenuItem`'s `onSelect`, where nesting a `SheetTrigger` inside the menu item races with the menu's own close),
+ * `trigger` can be omitted and the caller drives visibility itself.
  */
-export function FormDrawer({ trigger, title, description, children }: { trigger: ReactNode; title: string; description?: string; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
+export function FormDrawer({
+  trigger,
+  title,
+  description,
+  children,
+  open: openProp,
+  onOpenChange,
+}: {
+  trigger?: ReactNode;
+  title: string;
+  description?: string;
+  children: ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : internalOpen;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (controlled) onOpenChange?.(next);
+      else setInternalOpen(next);
+    },
+    [controlled, onOpenChange],
+  );
+  const close = useCallback(() => setOpen(false), [setOpen]);
   const value = useMemo(() => ({ close }), [close]);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>{trigger}</SheetTrigger>
+      {trigger ? <SheetTrigger asChild>{trigger}</SheetTrigger> : null}
       <SheetContent className="w-full gap-0 sm:max-w-[30rem]">
         <SheetHeader className="border-b pr-12">
           <SheetTitle className="text-base">{title}</SheetTitle>
