@@ -33,7 +33,7 @@ function ownershipWhere(actor: OwnerActor): Prisma.CustomerWhereInput {
 }
 
 /** Open enquiries and latest enquiry time per customer, for one page of customers. One grouped query (no N+1). */
-async function enquiryStatsByCustomer(customerIds: string[]): Promise<Map<string, { open: number; lastAt: Date }>> {
+export async function enquiryStatsByCustomer(customerIds: string[]): Promise<Map<string, { open: number; lastAt: Date }>> {
   if (customerIds.length === 0) return new Map();
   const rows = await db.$queryRaw<{ customer_id: string; open_count: bigint; last_at: Date }[]>(Prisma.sql`
     SELECT e.customer_id,

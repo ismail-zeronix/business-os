@@ -18,6 +18,7 @@ import { FormDrawer } from "@/components/forms/form-drawer";
 import { RecordStatusControl } from "@/components/forms/record-status-control";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { formatDateTime, formatRelativeAge } from "@/lib/format";
 import { firstParam, parsePage } from "@/lib/search-params";
 import { listActivity } from "@/modules/audit/queries";
 import { setCustomerStatusAction } from "@/modules/customers/actions";
@@ -25,9 +26,10 @@ import { CustomerActivityComposer } from "@/modules/customers/components/activit
 import { CustomerContactsPanel } from "@/modules/customers/components/contacts-panel";
 import { CustomerForm } from "@/modules/customers/components/customer-form";
 import { CustomerOwnerControl } from "@/modules/customers/components/owner-control";
-import { countCustomerContacts, getCustomer, listCustomerContacts } from "@/modules/customers/queries";
+import { countCustomerContacts, enquiryStatsByCustomer, getCustomer, listCustomerContacts } from "@/modules/customers/queries";
 import { EnquiriesTable, NoEnquiries } from "@/modules/enquiries/components/enquiries-table";
 import { listEnquiries, listUserOptions } from "@/modules/enquiries/queries";
+import { getCustomerOpenQuotationValue } from "@/modules/quotations/queries";
 
 const TABS = ["overview", "contacts", "enquiries", "activity"] as const;
 type Tab = (typeof TABS)[number];
@@ -73,6 +75,77 @@ async function CustomerEnquiries({ customerId, archived, page, searchParams }: {
         )}
       </Panel>
     </>
+  );
+}
+
+/** Overview tab: the profile plus a condensed preview of enquiries and activity, each linking to its own full tab. */
+async function CustomerOverview({ customer, location, contactCount }: { customer: NonNullable<Awaited<ReturnType<typeof getCustomer>>>; location: string; contactCount: number }) {
+  const id = customer.id;
+  const viewAllHref = (targetTab: Tab) => `/customers/${id}?tab=${targetTab}`;
+  const viewAllLink = (targetTab: Tab) => (
+    <Link href={viewAllHref(targetTab)} className="text-xs font-medium text-brand hover:underline">
+      View all →
+    </Link>
+  );
+
+  const [{ rows: enquiryRows }, stats, openQuotationValue, activityRows] = await Promise.all([
+    listEnquiries({ view: "all", customerId: id, page: 1 }),
+    enquiryStatsByCustomer([id]),
+    getCustomerOpenQuotationValue(id),
+    listActivity({ type: "Customer", id }),
+  ]);
+  const recentEnquiries = enquiryRows.slice(0, 5);
+  const recentActivity = activityRows.slice(0, 5);
+  const stat = stats.get(id) ?? null;
+
+  const quotationValueLabel = openQuotationValue == null ? null : "mixed" in openQuotationValue ? "Mixed currencies — open each to see value" : `${openQuotationValue.currencyCode} ${openQuotationValue.total}`;
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="space-y-4 lg:col-span-2">
+        <PanelSection title="Profile">
+          <ContactInfoList
+            items={[
+              { icon: Phone, label: "Phone", value: customer.phone },
+              { icon: Mail, label: "Email", value: customer.email },
+              { icon: Globe, label: "Website", value: customer.website ? <WebsiteLink url={customer.website} /> : null },
+              { icon: MapPin, label: "Location", value: location || null },
+            ]}
+          />
+          <Separator className="my-4" />
+          <KeyValue items={[{ label: "Legal name", value: customer.legalName }, { label: "TRN", value: customer.trn, mono: true }, { label: "Owner", value: customer.owner?.name ?? "Shared (everyone)" }]} />
+          <Separator className="my-4" />
+          <div className="text-xs text-muted-foreground">Notes</div>
+          <div className="mt-1">{customer.notes ? <p className="text-sm whitespace-pre-wrap">{customer.notes}</p> : <Unknown />}</div>
+        </PanelSection>
+
+        <PanelSection title="Recent enquiries" actions={viewAllLink("enquiries")}>
+          {recentEnquiries.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No enquiries from this customer yet.</p>
+          ) : (
+            <EnquiriesTable bare rows={recentEnquiries} showCustomer={false} />
+          )}
+        </PanelSection>
+      </div>
+
+      <div className="space-y-4">
+        <PanelSection title="Snapshot">
+          <KeyValue
+            items={[
+              { label: "Open enquiries", value: String(stat?.open ?? 0) },
+              ...(quotationValueLabel !== null ? [{ label: "Open quotation value", value: quotationValueLabel }] : []),
+              { label: "Last enquiry", value: stat?.lastAt ? <span title={formatDateTime(stat.lastAt)}>{formatRelativeAge(stat.lastAt)}</span> : null },
+              { label: "Contacts", value: String(contactCount) },
+            ]}
+            columns={1}
+          />
+        </PanelSection>
+
+        <PanelSection title="Recent activity" actions={viewAllLink("activity")}>
+          <Timeline rows={recentActivity} emptyTitle="No activity recorded yet" flat />
+        </PanelSection>
+      </div>
+    </div>
   );
 }
 
@@ -125,23 +198,7 @@ export default async function CustomerDetailPage(props: PageProps<"/customers/[i
       <TabNav flush tabs={tabs} active={tab} basePath={`/customers/${id}`} />
 
       <PageBody>
-        {tab === "overview" ? (
-          <PanelSection title="Profile">
-            <ContactInfoList
-              items={[
-                { icon: Phone, label: "Phone", value: customer.phone },
-                { icon: Mail, label: "Email", value: customer.email },
-                { icon: Globe, label: "Website", value: customer.website ? <WebsiteLink url={customer.website} /> : null },
-                { icon: MapPin, label: "Location", value: location || null },
-              ]}
-            />
-            <Separator className="my-4" />
-            <KeyValue items={[{ label: "Legal name", value: customer.legalName }, { label: "TRN", value: customer.trn, mono: true }, { label: "Owner", value: customer.owner?.name ?? "Shared (everyone)" }]} />
-            <Separator className="my-4" />
-            <div className="text-xs text-muted-foreground">Notes</div>
-            <div className="mt-1">{customer.notes ? <p className="text-sm whitespace-pre-wrap">{customer.notes}</p> : <Unknown />}</div>
-          </PanelSection>
-        ) : null}
+        {tab === "overview" ? <CustomerOverview customer={customer} location={location} contactCount={contactCount} /> : null}
 
         {tab === "contacts" ? <CustomerContactsPanel customerId={id} contacts={await listCustomerContacts(id, { includeArchived: true })} customerArchived={customer.status === "ARCHIVED"} /> : null}
 

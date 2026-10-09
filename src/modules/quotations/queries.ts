@@ -4,7 +4,7 @@ import type { QuotationStatus } from "../../generated/prisma/enums";
 import type { OwnerActor } from "../customers/queries";
 import { escapeLike } from "../../lib/like";
 import { PAGE_SIZE } from "../../lib/search-params";
-import { computeTotals } from "./pricing";
+import { centsToAmount, computeTotals, toCents } from "./pricing";
 
 /**
  * Sales-module visibility, following the linked customer's owner (customers/queries.ts): visible if the customer is
@@ -117,6 +117,27 @@ export async function listQuotations(params: QuotationListParams, actor: OwnerAc
     };
   });
   return { rows, total };
+}
+
+export type CustomerOpenQuotationValue = { currencyCode: string; total: string; count: number } | { mixed: true; count: number } | null;
+
+/**
+ * The value of this customer's open (DRAFT) quotations, for the customer detail page's snapshot. Summed only when every
+ * draft shares one currency - this codebase never converts currency, so drafts spanning 2+ currencies report `{ mixed: true }`
+ * instead of a fabricated total. Returns null when there are no open drafts, so the UI omits the row entirely.
+ */
+export async function getCustomerOpenQuotationValue(customerId: string): Promise<CustomerOpenQuotationValue> {
+  const drafts = await db.quotation.findMany({
+    where: { customerId, status: "DRAFT" },
+    select: { currencyCode: true, vatPercent: true, lines: { select: { quantity: true, unitPrice: true } } },
+  });
+  if (drafts.length === 0) return null;
+
+  const currencies = new Set(drafts.map((d) => d.currencyCode));
+  if (currencies.size > 1) return { mixed: true, count: drafts.length };
+
+  const totalCents = drafts.reduce((sum, d) => sum + toCents(computeTotals(d.lines, d.vatPercent).total), 0);
+  return { currencyCode: drafts[0]!.currencyCode, total: centsToAmount(totalCents), count: drafts.length };
 }
 
 /** The quotations of one enquiry, newest first. Used by the enquiry header. */
