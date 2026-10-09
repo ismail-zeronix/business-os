@@ -17,6 +17,7 @@ import { FormDrawer } from "@/components/forms/form-drawer";
 import { RecordStatusControl } from "@/components/forms/record-status-control";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { formatRelativeAge } from "@/lib/format";
 import { SUPPLIER_TYPE_LABEL } from "@/lib/labels";
 import { buildHref, firstParam } from "@/lib/search-params";
 import { listActivity } from "@/modules/audit/queries";
@@ -30,7 +31,7 @@ import { setSupplierStatusAction } from "@/modules/suppliers/actions";
 import { ContactsPanel } from "@/modules/suppliers/components/contacts-panel";
 import { SupplierAssociations } from "@/modules/suppliers/components/supplier-associations";
 import { SupplierForm } from "@/modules/suppliers/components/supplier-form";
-import { countContacts, getSupplier, listContacts } from "@/modules/suppliers/queries";
+import { countContacts, getSupplier, listContacts, supplierActivityBySupplier } from "@/modules/suppliers/queries";
 
 const TABS = ["overview", "contacts", "broadcasts", "prices", "activity"] as const;
 type Tab = (typeof TABS)[number];
@@ -87,7 +88,13 @@ export default async function SupplierDetailPage(props: PageProps<"/suppliers/[i
 
   const brandIds = supplier.brands.map((b) => b.brand.id);
   const categoryIds = supplier.categories.map((c) => c.category.id);
-  const [contactCount, brandOptions, categoryOptions] = await Promise.all([countContacts(id), listBrandOptions(brandIds), listCategoryOptions(categoryIds)]);
+  const [contactCount, brandOptions, categoryOptions, activity] = await Promise.all([
+    countContacts(id),
+    listBrandOptions(brandIds),
+    listCategoryOptions(categoryIds),
+    supplierActivityBySupplier([id]),
+  ]);
+  const latestEvidenceAt = activity.get(id)?.lastEvidenceAt ?? null;
 
   const tabs: TabItem[] = [
     { key: "overview", label: "Overview" },
@@ -131,7 +138,7 @@ export default async function SupplierDetailPage(props: PageProps<"/suppliers/[i
         {tab === "overview" ? (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div className="space-y-4 lg:col-span-2">
-              <PanelSection title="Profile">
+              <PanelSection title="Identity">
                 <ContactInfoList
                   items={[
                     { icon: Phone, label: "Phone", value: supplier.phone },
@@ -156,19 +163,21 @@ export default async function SupplierDetailPage(props: PageProps<"/suppliers/[i
                 <div className="mt-1">{supplier.notes ? <p className="text-sm whitespace-pre-wrap">{supplier.notes}</p> : <Unknown />}</div>
               </PanelSection>
 
-              <PanelSection title="Procurement profile">
+              <PanelSection title="Commercial terms">
                 <KeyValue
                   items={[
                     { label: "Payment terms", value: supplier.paymentTerms },
                     { label: "Credit terms", value: supplier.creditTerms },
-                    { label: "Warranty notes", value: supplier.warrantyNotes },
                     { label: "Delivery notes", value: supplier.deliveryNotes },
+                    { label: "Warranty notes", value: supplier.warrantyNotes },
                   ]}
                 />
               </PanelSection>
             </div>
 
-            <PanelSection title="Brands and categories" className="h-fit">
+            <PanelSection title="Procurement coverage" className="h-fit">
+              <div className="text-sm text-muted-foreground">{latestEvidenceAt ? `Latest evidence: ${formatRelativeAge(latestEvidenceAt)}` : "No evidence yet"}</div>
+              <Separator className="my-4" />
               <div>
                 <SupplierAssociations supplierId={id} brandOptions={brandOptions} categoryOptions={categoryOptions} brandIds={brandIds} categoryIds={categoryIds} />
               </div>

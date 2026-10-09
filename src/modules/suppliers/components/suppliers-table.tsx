@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { FreshnessBadge, RecordStatusBadge } from "@/components/application/status-badges";
+import { RecordStatusBadge } from "@/components/application/status-badges";
 import { Unknown } from "@/components/application/states";
 import { TableShell } from "@/components/data-table/table-shell";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatRelativeAge } from "@/lib/format";
 import { SUPPLIER_TYPE_LABEL } from "@/lib/labels";
 import type { SupplierListRow } from "../queries";
 
@@ -33,7 +34,7 @@ export function SuppliersTable({ rows }: { rows: SupplierListRow[] }) {
             <TableHead>Categories</TableHead>
             <TableHead>Location</TableHead>
             <TableHead>Payment terms</TableHead>
-            <TableHead>Last evidence</TableHead>
+            <TableHead>Activity</TableHead>
             <TableHead>Status</TableHead>
           </TableRow>
         </TableHeader>
@@ -57,7 +58,13 @@ export function SuppliersTable({ rows }: { rows: SupplierListRow[] }) {
                 </TableCell>
                 <TableCell>{location || <Unknown dash />}</TableCell>
                 <TableCell className="truncate">{row.paymentTerms ?? <Unknown dash />}</TableCell>
-                <TableCell>{row.lastEvidenceAt ? <FreshnessBadge observedAt={row.lastEvidenceAt} now={now} /> : <span className="text-muted-foreground">No evidence</span>}</TableCell>
+                <TableCell className="text-sm">
+                  {row.lastEvidenceAt ? (
+                    `${row.broadcastCount} broadcast${row.broadcastCount === 1 ? "" : "s"} · last ${formatRelativeAge(row.lastEvidenceAt, now)}`
+                  ) : (
+                    <span className="text-muted-foreground">No evidence</span>
+                  )}
+                </TableCell>
                 <TableCell>
                   <RecordStatusBadge status={row.status} />
                 </TableCell>

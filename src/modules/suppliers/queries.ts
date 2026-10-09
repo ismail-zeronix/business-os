@@ -25,18 +25,19 @@ export type SupplierListRow = {
   brands: { id: string; name: string }[];
   categories: { id: string; name: string }[];
   lastEvidenceAt: Date | null;
+  broadcastCount: number;
 };
 
-/** Latest evidence time per supplier, over its non-archived broadcasts. One grouped query for the whole page (no N+1). */
-export async function lastEvidenceBySupplier(supplierIds: string[]): Promise<Map<string, Date>> {
+/** Latest evidence time and broadcast count per supplier, over its non-archived broadcasts. One grouped query for the whole page (no N+1). */
+export async function supplierActivityBySupplier(supplierIds: string[]): Promise<Map<string, { lastEvidenceAt: Date; broadcastCount: number }>> {
   if (supplierIds.length === 0) return new Map();
-  const rows = await db.$queryRaw<{ supplier_id: string; last_observed_at: Date }[]>(Prisma.sql`
-    SELECT b.supplier_id, MAX(e.observed_at) AS last_observed_at
+  const rows = await db.$queryRaw<{ supplier_id: string; last_observed_at: Date; broadcast_count: bigint }[]>(Prisma.sql`
+    SELECT b.supplier_id, MAX(e.observed_at) AS last_observed_at, COUNT(*) AS broadcast_count
     FROM broadcasts b
     JOIN evidence_sources e ON e.id = b.evidence_source_id
     WHERE b.supplier_id = ANY(${supplierIds}::uuid[]) AND b.archived_at IS NULL
     GROUP BY b.supplier_id`);
-  return new Map(rows.map((r) => [r.supplier_id, r.last_observed_at]));
+  return new Map(rows.map((r) => [r.supplier_id, { lastEvidenceAt: r.last_observed_at, broadcastCount: Number(r.broadcast_count) }]));
 }
 
 /** Server-side filtered, paginated supplier list. By default archived suppliers are hidden; choose the Archived status to see them. */
@@ -91,7 +92,7 @@ export async function listSuppliers(params: SupplierListParams): Promise<{ rows:
     db.supplier.count({ where }),
   ]);
 
-  const lastEvidence = await lastEvidenceBySupplier(suppliers.map((s) => s.id));
+  const activity = await supplierActivityBySupplier(suppliers.map((s) => s.id));
 
   return {
     total,
@@ -106,7 +107,8 @@ export async function listSuppliers(params: SupplierListParams): Promise<{ rows:
       status: s.status,
       brands: s.brands.map((b) => b.brand),
       categories: s.categories.map((c) => c.category),
-      lastEvidenceAt: lastEvidence.get(s.id) ?? null,
+      lastEvidenceAt: activity.get(s.id)?.lastEvidenceAt ?? null,
+      broadcastCount: activity.get(s.id)?.broadcastCount ?? 0,
     })),
   };
 }
