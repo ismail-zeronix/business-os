@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Panel } from "@/components/application/page-canvas";
+import { SettingsSectionHeader } from "@/components/application/settings-section-header";
 import { EmptyState } from "@/components/application/states";
 import { Alert } from "@/components/ui/alert";
 import { requireAdmin } from "@/core/permissions/actor";
@@ -21,6 +22,7 @@ export default async function AiSettingsPage() {
 
   return (
     <div className="space-y-4">
+      <SettingsSectionHeader title="AI" description="The assistant that answers questions from the application's own evidence." />
       <Alert className="bg-surface text-xs text-muted-foreground">
         The assistant answers from the application&apos;s own evidence (products, supplier prices and stock) and shows the sources behind every answer. It never
         changes a record and never sends a message. Each question and the evidence needed to answer it are sent to the active provider. Switching provider keeps

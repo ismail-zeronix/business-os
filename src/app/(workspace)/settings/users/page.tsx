@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Panel } from "@/components/application/page-canvas";
+import { SettingsSectionHeader } from "@/components/application/settings-section-header";
 import { EmptyState } from "@/components/application/states";
 import { TopbarActions } from "@/components/application/topbar-slot";
 import { FormDrawer } from "@/components/forms/form-drawer";
@@ -34,6 +35,7 @@ export default async function UsersSettingsPage() {
 
   return (
     <>
+      <SettingsSectionHeader title="Users" description="The colleagues who can sign in to the application." />
       <TopbarActions>{addUser}</TopbarActions>
       {!signInOn ? (
         <p className="mb-3 text-xs text-warning">Sign-in is not set up yet, so nobody is asked to sign in. Set it up from the banner at the top, then add colleagues here.</p>

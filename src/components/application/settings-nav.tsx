@@ -11,7 +11,7 @@ export function SettingsNav() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Settings" className="w-52 shrink-0">
+    <nav aria-label="Settings" className="w-52 shrink-0 sticky top-5">
       <Card className="gap-5 p-3 shadow-panel">
         {SETTINGS_NAVIGATION.map((group) => (
           <div key={group.label}>
